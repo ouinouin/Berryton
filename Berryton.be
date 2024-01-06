@@ -2,6 +2,7 @@
 #https://owncloud.pingus.org/nextcloud/index.php/s/nKFyHX9TK63BWGo
 #todo : implement quiet mode on the fan mode
 #todo : check boost mode on the fan mode
+#todo publish autodiscovery for homeassistant
 # crc snippet from  https://github.com/peepshow-21/ns-flash/blob/master/berry/nxpanel.be
 import string
 import mqtt
@@ -13,6 +14,7 @@ var OscillationModeSetpoint
 var TemperatureSetpoint
 var ACmode
 var incomingpayload = bytes()
+TemperatureSetpointOffset = 8
 print("mqtt topics", topicprefix , FeedbackTopicPrefix )
 # serial communications (pin 26 TX , PIN 32 RX)
 ser = serial(32, 26, 9600, serial.SERIAL_8N1)
@@ -111,13 +113,15 @@ end
 		var MyACmode = GetACmode(payload)
 		var MyFanSpeed = GetFanSpeed(payload)
 		var MyOscillationMode = GetOscillationMode(payload)
-		var MyTemperature = str(GetTemperature(payload))
-		var MyTemperatureSetpoint = str(GetTemperatureSetpoint(payload))
+		
+		# sending back the temperature setpoint value minus the offset for the regulation to happen correctly
+		var MyTemperature = str(GetTemperature(payload) )
+		var MyTemperatureSetpoint = str(GetTemperatureSetpoint(payload)- TemperatureSetpointOffset)
 		
 		#initialize sttings value with first feedback from AC unit to manage restart conditions
 		if FanSpeedSetpoint == nil FanSpeedSetpoint = MyFanSpeed  print("recovered FanSpeedSetpoint : " , FanSpeedSetpoint) end
 		if OscillationModeSetpoint == nil OscillationModeSetpoint = MyOscillationMode print("recovered OscillationModeSetpoint : ", OscillationModeSetpoint) end
-		if TemperatureSetpoint == nil TemperatureSetpoint = MyTemperature print("recovered TemperatureSetpoint : ", TemperatureSetpoint) end
+		if TemperatureSetpoint == nil TemperatureSetpoint = MyTemperatureSetpoint print("recovered TemperatureSetpoint : ", TemperatureSetpoint) end
 		if ACmode == nil ACmode = MyACmode print("recovered ACmode : ", ACmode) end
 		
 		
@@ -245,11 +249,18 @@ end
 		print("received OscillationModeSetpoint = ", OscillationModeSetpoint)
 		mqtt.publish(FeedbackTopicPrefix + "swing/get" , OscillationModeSetpoint)
 		print("publishing immediately OscillationModeSetpoint")
-	  elif topic == (topicprefix + "temperature/set")
 	  
+      elif topic == (topicprefix + "temperature/set")
+	    #some offset trials , the feedback is the temperature without the offset
+		
 		TemperatureSetpoint = int(number((payload_s)))
-		print("received TemperatureSetpoint = ", TemperatureSetpoint)
-		print("debug point 1")
+        print("received TemperatureSetpoint = ", TemperatureSetpoint)
+		
+		if ACmode == "heat"
+			TemperatureSetpoint = int(number((payload_s))) + TemperatureSetpointOffset
+			print("heating mode, applying offset of :" , TemperatureSetpointOffset , "°C")
+		end
+		
 		mqtt.publish(FeedbackTopicPrefix + "Actualsetpoint/get" , payload_s)
 		print("publishing immediately TemperatureSetpoint")
 	  
@@ -262,7 +273,6 @@ end
 	  
 	  return true
 	  end
-	  print("debug point 2")
 	  #print("topic", topic)
 	  #print("forging payload")
 	  var frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpoint)
