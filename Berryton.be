@@ -378,6 +378,7 @@ if persist.member("TempSetpoint") != nil
 else
 	print("persistance : setting a default temperature setpoint")
 	TemperatureSetpoint = 20
+	persist.TemperatureSetpoint = TemperatureSetpointToACunit
 end
 
 if persist.member("TemperatureSetpointToACunit") != nil
@@ -386,6 +387,7 @@ if persist.member("TemperatureSetpointToACunit") != nil
 else
 	print("persistance : setting a default TemperatureSetpointToACunit")
 	TemperatureSetpointToACunit = 17
+	persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
 end
 
 def loopme()
