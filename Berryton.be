@@ -17,6 +17,7 @@ var ACmode
 var incomingpayload = bytes()
 var externaltemptopic = "nodered/temp-salon"
 var internalThermostat = 1
+var TemperatureSetpointToACunit
 
 TemperatureSetpointOffset = 8
 # serial communications (pin 26 TX , PIN 32 RX)
@@ -91,7 +92,7 @@ def GetACmode(payload) # available modes are : "auto","cool","dry","fan_only","h
 	else
 	ACmodeString = ACmodelist[5]    
 	end
-	print(" ACmodeString = " , ACmodeString ) #debug
+	print("function GetACmode :  ACmodeString = " , ACmodeString ) #debug
 	return ACmodeString
 end
 
@@ -106,25 +107,25 @@ def GetFanSpeed(payload)
 	else
 	FanModeString = FanModeList[7]
 	end
-	print( "FanModeString = " , FanModeString)
+	print( "function GetFanSpeed : FanModeString = " , FanModeString)
 	return FanModeString
 end
 
 #retrieve the AC oscillation mode from the AC unit frame
 def GetOscillationMode(payload)
 	var OscillationModeList = ["off", "on" ,"high","medium-high","medium","medium-low","low","sweep 3-5","sweep 3-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6"]
-	#print("byte 15 : 0x" ,string.hex(payload[15]), " Oscillation mode up/down 4 bits value :",payload.getbits(123,1), payload.getbits(122,1), payload.getbits(121,1), payload.getbits(120,1)) #debug
+	#print("function GetOscillationMode : byte 15 : 0x" ,string.hex(payload[15]), " Oscillation mode up/down 4 bits value :",payload.getbits(123,1), payload.getbits(122,1), payload.getbits(121,1), payload.getbits(120,1)) #debug
 	var OscillationModeString = OscillationModeList[payload.getbits(120,4)]
-	print ("OscillationModeString = ", OscillationModeString)
+	print ("function GetOscillationMode : OscillationModeString = ", OscillationModeString)
 	return OscillationModeString
 end
 
 #retrieve the AC internal unit temperature sensor value from the AC unit frame
-def GetTemperature(payload)
+def GetInternalTemperature(payload)
 	var temperature = 0
 	#print("byte 10 , ambient temperature integer part : " , payload.get(10,1) , "byte 11, ambient temperature decimal part: " , payload.get(11,1)   ) #debug
 	temperature = real(payload.get(10,1)) + real(payload.get(11,1)) /10
-	print("internal unit temperature: ", temperature)
+	print("function GetInternalTemperature internal unit temperature: ", temperature)
 	return temperature
 end
 
@@ -134,7 +135,7 @@ def GetTemperatureSetpoint(payload)
 	#TemperatureSetpoint = payload.getbits(112,4) +16
 	# will directly return the setpoint received by mqtt
 	TemperatureSetpoint = number(persist.TempSetpoint)
-	print("function GetTemperature setpoint, TemperatureSetpoint : ", TemperatureSetpoint)
+	print("function GetInternalTemperature setpoint, TemperatureSetpoint : ", TemperatureSetpoint)
 	return TemperatureSetpoint
 end
 	
@@ -144,7 +145,7 @@ def PublishFeedback(payload)
 	var MyOscillationMode = GetOscillationMode(payload)
 	
 	# sending back the temperature setpoint value minus the offset for the regulation to happen correctly
-	var MyTemperature = str(GetTemperature(payload) )
+	var MyTemperature = str(GetInternalTemperature(payload) )
 	if internalThermostat == 0
 	  TemperatureSetpoint = GetTemperatureSetpoint(payload) - TemperatureSetpointOffset
 	else 
@@ -250,6 +251,7 @@ def forgepayload(Acmode,FanSpeed,OscillationMode,TemperatureSP)
 end
 
 def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
+  var frametosend
   print("function MQTTSubscribeDispatcher : message received from mqtt")
   print("function MQTTSubscribeDispatcher : actual ACmode = ", ACmode)
   print("function MQTTSubscribeDispatcher : actual FanSpeedSetpoint = ", FanSpeedSetpoint)
@@ -298,31 +300,35 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	
    
   #on external temperature reception, we trigger the thermostat, we dont
-  #stop the unit but give a  lower temperature (20°C) to force the AC unit 
+  #stop the unit but give a  lower temperature (17°C) to force the AC unit 
   #to pause with louvre open
   elif topic == externaltemptopic && internalThermostat == 1 
 	print("function MQTTSubscribeDispatcher : received a temperature value from external thermometer : ", number(payload_s) )
 	var thermostat_state = thermostat(TemperatureSetpoint,number(payload_s))
 	print("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
 		if thermostat_state == 1
-			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with TemperatureSetpoint + TemperatureSetpointOffset to AC unit")
-			var frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,29)
+			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with 29°C to AC unit")
+			TemperatureSetpointToACunit = 29
+			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
 			ser.write(frametosend)
 			return
 		elif thermostat_state == 0
-			print("function MQTTSubscribeDispatcher : thermostat function returned 0 , sending frame with fixed temperature to AC unit")
-			var frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,17)
+			print("function MQTTSubscribeDispatcher : thermostat function returned 0 , sending frame with 17°C to AC unit")
+			TemperatureSetpointToACunit = 17
+			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
 			ser.write(frametosend)
 			return
 		end
-    return
+
+  return
   end
   
-  #print("topic", topic)
-  #print("forging payload")
-  var frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,int(TemperatureSetpoint))
-  #print("function MQTTSubscribeDispatcher : sending frame to mqtt for debug: ", frametosend)
-  #mqtt.publish("testsclim/rawpayload" , frametosend)
+  if internalThermostat == 1
+	frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
+  else
+    frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,int(TemperatureSetpoint))
+  end
+
   print("function MQTTSubscribeDispatcher : sending frame to AC unit: ", frametosend)
   ser.write(frametosend)
   return true
@@ -369,6 +375,14 @@ if persist.member("TempSetpoint") != nil
 else
 	print("persistance : setting a default temperature setpoint")
 	TemperatureSetpoint = 20
+end
+
+if persist.member("TemperatureSetpointToACunit") != nil
+	print("persistance : retrieving TemperatureSetpointToACunit from tasmota flash")
+	TemperatureSetpointToACunit = number(persist.member("TemperatureSetpointToACunit"))
+else
+	print("persistance : setting a default TemperatureSetpointToACunit")
+	TemperatureSetpointToACunit = 17
 end
 
 def loopme()
