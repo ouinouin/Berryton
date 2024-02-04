@@ -348,7 +348,7 @@ def getfromserial()
 			print("function GetFromSerial : message from AC unit :", msg.tostring(60))
 		
 		elif msg[0..1] == bytes("7A7A") && avail > msg.get(4,1)
-			print ("function GetFromSerial , buffer is bigger than frame, cutting frame")
+			print ("function GetFromSerial : buffer is bigger than frame, cutting frame")
 			var msg2 = msg[msg.get(4,1)..size(msg)-1]
 			msg = msg[0..msg.get(4,1)-1]
 			print("function GetFromSerial : message from AC unit :", msg.tostring(60))
@@ -361,6 +361,7 @@ def getfromserial()
 	end
 end
 
+######### main program ########
 
 print("starting program : mqtt topics", topicprefix , FeedbackTopicPrefix )
 mqtt.subscribe(topicprefix + "mode/set",MQTTSubscribeDispatcher)
