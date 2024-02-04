@@ -125,7 +125,7 @@ def GetInternalTemperature(payload)
 	var temperature = 0
 	#print("byte 10 , ambient temperature integer part : " , payload.get(10,1) , "byte 11, ambient temperature decimal part: " , payload.get(11,1)   ) #debug
 	temperature = real(payload.get(10,1)) + real(payload.get(11,1)) /10
-	print("function GetInternalTemperature internal unit temperature: ", temperature)
+	print("function GetInternalTemperature : internal unit temperature: ", temperature)
 	return temperature
 end
 
@@ -135,7 +135,7 @@ def GetTemperatureSetpoint(payload)
 	#TemperatureSetpoint = payload.getbits(112,4) +16
 	# will directly return the setpoint received by mqtt
 	TemperatureSetpoint = number(persist.TempSetpoint)
-	print("function GetInternalTemperature setpoint, TemperatureSetpoint : ", TemperatureSetpoint)
+	print("function GetTemperatureSetpoint : TemperatureSetpoint : ", TemperatureSetpoint)
 	return TemperatureSetpoint
 end
 	
