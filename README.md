@@ -1,4 +1,4 @@
-# Berryton
+#Berryton
 Drive your airton AC unit from mqtt with an ESP32 module flashed with tasmota and this berry script
 
 discussion here : 
@@ -48,7 +48,7 @@ you have to make your experience to see what offset to be given for a maximum te
 
 In hysteresis mode (only tested in heating mode yet) , the unit will set  a temperature higher than your setpoint (+8°C by default). the script is subscribing to your temperature sensor topic : externaltemptopic , and then does the delta between the setpoint and the external temperature value : "**ActualTemp - Setpoint**" , if this result is > 0,3 °C , the unit will switch to a low temperature setpoint (by default 20°C) .
 
-##Home assistant config
+## Home assistant config
 Associated homeassistant configuration to append in your configuration.yaml of homeassistant
 
 note that the thermostat topic is coming from elsewhere
