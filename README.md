@@ -13,6 +13,7 @@ the functionalities targeted for now are :
 - Setting the mode (Fan, dry , heat etc etc)
 - Setting the fan speed (low medium high etc etc
 - Setting the louvres Height or oscillation
+- Setting an external temperature source from mqtt and letting the unit regulate on itself by the help of an hysteresis thermostat function.
 
 As not being a coder (this is my first published project), the code quality is likely to be poor , but the initial functionalities are working.
 
@@ -22,24 +23,32 @@ i run this script with a M5stack atom ESP32 , mind that you need a bidirectional
 there is a lot of discussions on the internet to know if ESP32 is or is not 5V tolerant. For now i run without level shifter and it still works after 1 year.
 
 
-comments are welcome with pictures and data to see how poor is the regulation yet :-), feedback  might or might not come depending on my time.
+comments and contributions are welcome.
 
 
 modbus crc snippet from  https://github.com/peepshow-21/ns-flash/blob/master/berry/nxpanel.be
 
+##Regulation
+two modes are actually available, one letting just the AC unit itself regulating on its own internal sensor (poor results) and one relying on an hysteresis thermostat coded in the berry script
 
+in heat mode, you have to mind about using the remote control, as the remote will backfeed a value to the system, the berry code will then substract the offset value to the value cyclically retrieved from the AC unit and feed it to MQTT.
+
+###offset mode
+    var internalThermostat = 0
 in heating mode an offset is implemented (TemperatureSetpointOffset). this offset is meant to be transparent from the homeassistant point of view.
 The offset is just here to ensure a correct regulation while you regulate from an external thermostat, since the AC unit temperature sensor is sensing a much higher temperature at 2m height + its enclosed inside the ac unit.
 The offset is added to the setpoint you send to the unit , then when reading the feedback from the AC unit, its substracted, to give a correct feedback to homeassistant.
-
 the default offset is 8°C which seems to work well for a 30 m2 room.
 bigger rooms might require a higher offset.
-You will see 2 different behavior of the unit :
-
-- the unit reached its internal setpoints and interrupts by itself: the louvres will remain open , on the highest position
-- the external setpoint is reached : homeassistant will give a stop command , the louvres will close, and the red stop button will lit on the A/C unit.
 you have to make your experience to see what offset to be given for a maximum temperature stability on your room.
 
+###hysteresis mode
+    var internalThermostat = 1
+    var externaltemptopic = "nodered/temp-salon"
+
+In hysteresis mode (only tested in heating mode yet) , the unit will set  a temperature higher than your setpoint (+8°C by default). the script is subscribing to your temperature sensor topic : externaltemptopic , and then does the delta between the setpoint and the external temperature value : "**ActualTemp - Setpoint**" , if this result is > 0,3 °C , the unit will switch to a low temperature setpoint (by default 20°C) .
+
+##Home assistant config
 Associated homeassistant configuration to append in your configuration.yaml of homeassistant
 
 note that the thermostat topic is coming from elsewhere
