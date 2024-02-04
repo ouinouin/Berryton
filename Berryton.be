@@ -311,7 +311,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 			return
 		elif thermostat_state == 0
 			print("function MQTTSubscribeDispatcher : thermostat function returned 0 , sending frame with fixed temperature to AC unit")
-			var frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,20)
+			var frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,17)
 			ser.write(frametosend)
 			return
 		end
