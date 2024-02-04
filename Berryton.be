@@ -293,7 +293,6 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		print("function MQTTSubscribeDispatcher : internal_thermostat enabled : saving the setpoint to persistance file") 
 		TemperatureSetpoint = number(payload_s)
 		persist.TempSetpoint = TemperatureSetpoint
-		persist.save()
 	end
 	print("function MQTTSubscribeDispatcher : publishing immediately TemperatureSetpoint")
 	mqtt.publish(FeedbackTopicPrefix + "Actualsetpoint/get" , payload_s)
@@ -309,12 +308,14 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		if thermostat_state == 1
 			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with 29°C to AC unit")
 			TemperatureSetpointToACunit = 29
+			persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
 			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
 			ser.write(frametosend)
 			return
 		elif thermostat_state == 0
 			print("function MQTTSubscribeDispatcher : thermostat function returned 0 , sending frame with 17°C to AC unit")
 			TemperatureSetpointToACunit = 17
+			persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
 			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
 			ser.write(frametosend)
 			return
@@ -323,6 +324,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
   return
   end
   
+  # in thermostat mode we 
   if internalThermostat == 1
 	frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
   else
