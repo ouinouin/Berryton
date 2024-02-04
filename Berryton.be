@@ -306,8 +306,8 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	var thermostat_state = thermostat(TemperatureSetpoint,number(payload_s))
 	print("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
 		if thermostat_state == 1
-			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with 29°C to AC unit")
-			TemperatureSetpointToACunit = 29
+			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with 31°C to AC unit")
+			TemperatureSetpointToACunit = 31
 			persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
 			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
 			ser.write(frametosend)
