@@ -1,4 +1,5 @@
-#Berryton
+# Berryton
+
 Drive your airton AC unit from mqtt with an ESP32 module flashed with tasmota and this berry script
 
 discussion here : 
@@ -28,12 +29,14 @@ comments and contributions are welcome.
 
 modbus crc snippet from  https://github.com/peepshow-21/ns-flash/blob/master/berry/nxpanel.be
 
-##Regulation
+## Regulation
+
 two modes are actually available, one letting just the AC unit itself regulating on its own internal sensor (poor results) and one relying on an hysteresis thermostat coded in the berry script
 
 in heat mode, you have to mind about using the remote control, as the remote will backfeed a value to the system, the berry code will then substract the offset value to the value cyclically retrieved from the AC unit and feed it to MQTT.
 
-###offset mode
+### offset mode
+
     var internalThermostat = 0
 in heating mode an offset is implemented (TemperatureSetpointOffset). this offset is meant to be transparent from the homeassistant point of view.
 The offset is just here to ensure a correct regulation while you regulate from an external thermostat, since the AC unit temperature sensor is sensing a much higher temperature at 2m height + its enclosed inside the ac unit.
@@ -42,13 +45,15 @@ the default offset is 8°C which seems to work well for a 30 m2 room.
 bigger rooms might require a higher offset.
 you have to make your experience to see what offset to be given for a maximum temperature stability on your room.
 
-###hysteresis mode
+### hysteresis mode
+
     var internalThermostat = 1
     var externaltemptopic = "nodered/temp-salon"
 
 In hysteresis mode (only tested in heating mode yet) , the unit will set  a temperature higher than your setpoint (+8°C by default). the script is subscribing to your temperature sensor topic : externaltemptopic , and then does the delta between the setpoint and the external temperature value : "**ActualTemp - Setpoint**" , if this result is > 0,3 °C , the unit will switch to a low temperature setpoint (by default 20°C) .
 
 ## Home assistant config
+
 Associated homeassistant configuration to append in your configuration.yaml of homeassistant
 
 note that the thermostat topic is coming from elsewhere
