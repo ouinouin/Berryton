@@ -7,7 +7,7 @@ discussion here :
 https://github.com/arendst/Tasmota/discussions/17328
 other solutions to drive the ac unit cooked by pingus will soon appear.
 
-the purpose is to be able to drive the airton units (that are most likely tcl clones) with an esp32 hooked to the serial port of the A/C unit.
+the purpose is to be able to drive the airton units (that are skyworth rebranded units) with an esp32 hooked to the serial port of the A/C unit.
 
 the functionalities targeted for now are : 
 
@@ -106,6 +106,18 @@ note that the thermostat topic is coming from elsewhere
 
 ```
 
+## TODO
+
+
+  * implement the get and set functions as tasmota functions to be able to use them in tasmota and out of tasmota through HTTP.
+  * Let berryton be a berry object.
+  * Document the hardware side of berryton (the bad way with no level shifters and the good way with level shifters)
+  * Fix turbo mode and improve code for all the set commands
+  * Create the ack frame for the wifi LED of AC unit not to blink anymore.
+  * Use BLE to interact with BLE temperature sensors supported by tasmota.
+  * publish the mqtt autodiscovery message for Homeassistant to be able to discover the AC unit.
+  * create some web buttons and informations on the web interface of tasmota.
+  * publish the spreadsheet of the protocol made with pingus.
 
 
 
