@@ -109,15 +109,15 @@ note that the thermostat topic is coming from elsewhere
 ## TODO
 
 
-  - [] Implement the get and set functions as tasmota functions to be able to use them in tasmota and out of tasmota through HTTP.
-  - [] Let berryton be a berry object.
-  - [] Document the hardware side of berryton (the bad way with no level shifters and the good way with level shifters).
-  - [] Fix turbo mode and improve code for all the set commands.
-  - [] Create the ack frame for the wifi LED of AC unit not to blink anymore.
-  - [] Use BLE to interact with BLE temperature sensors supported by tasmota.
-  - [] Publish the mqtt autodiscovery message for Homeassistant to be able to discover the AC unit.
-  - [] Create some web buttons and informations on the web interface of tasmota.
-  - [] Publish the spreadsheet of the protocol made with pingus.
+  - [ ] Implement the get and set functions as tasmota functions to be able to use them in tasmota and out of tasmota through HTTP.
+  - [ ] Let berryton be a berry object.
+  - [ ] Document the hardware side of berryton (the bad way with no level shifters and the good way with level shifters).
+  - [ ] Fix turbo mode and improve code for all the set commands.
+  - [ ] Create the ack frame for the wifi LED of AC unit not to blink anymore.
+  - [ ] Use BLE to interact with BLE temperature sensors supported by tasmota.
+  - [ ] Publish the mqtt autodiscovery message for Homeassistant to be able to discover the AC unit.
+  - [ ] Create some web buttons and informations on the web interface of tasmota.
+  - [ ] Publish the spreadsheet of the protocol made with pingus.
 
 
 
