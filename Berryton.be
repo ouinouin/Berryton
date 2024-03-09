@@ -384,6 +384,19 @@ class Berryton
 			persist.TemperatureSetpointToACunit = self.TemperatureSetpointToACunit
 		end
 	end
+
+	def web_sensor()
+		tasmota.web_send_decimal("mymessage")
+		#{s}: start of line
+		#{m}: separator between name and value
+		#{e}: end of line
+		var msg = string.format(
+			"{s}ACmode{m}%s G{e}"..    
+			"{s}TemperatureSetpoint{m}%f {e}"..
+			"{s}FanSpeedSetpoint{m}%s {e}"..
+			"{s}OscillationModeSetpoint{m}%s dps{e}", self.ACmode, self.TemperatureSetpoint, self.FanSpeedSetpoint , self.OscillationModeSetpoint)
+	end
+
 end
 
 Berryton = Berryton()
