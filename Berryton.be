@@ -357,12 +357,13 @@ class Berryton
 	######### main program ########
 	def init()
 		print("starting program : mqtt topics", self.topicprefix , self.FeedbackTopicPrefix )
-		mqtt.subscribe(self.topicprefix + "mode/set",self.MQTTSubscribeDispatcher)
-		mqtt.subscribe(self.topicprefix + "fan/set",self.MQTTSubscribeDispatcher)
-		mqtt.subscribe(self.topicprefix + "swing/set",self.MQTTSubscribeDispatcher)
-		mqtt.subscribe(self.topicprefix + "temperature/set",self.MQTTSubscribeDispatcher)
-		mqtt.subscribe("testsclim/payloadfromclim",self.MQTTSubscribeDispatcher)
-		mqtt.subscribe(self.externaltemptopic,self.MQTTSubscribeDispatcher)
+		#todo loop all the topics
+		mqtt.subscribe(self.topicprefix + "mode/set", /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
+		mqtt.subscribe(self.topicprefix + "fan/set", /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
+		mqtt.subscribe(self.topicprefix + "swing/set", /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
+		mqtt.subscribe(self.topicprefix + "temperature/set", /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
+		mqtt.subscribe(self.topicprefix + "testsclim/payloadfromclim", /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
+		mqtt.subscribe(self.topicprefix + self.externaltemptopic, /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
 
 		#check if any temperature setpoint has been saved to flash
 		if persist.member("TempSetpoint") != nil
