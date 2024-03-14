@@ -333,6 +333,7 @@ class Berryton
 	def every_250ms()
 		var avail = self.ser.available()
 		if avail != 0
+			print ("function every_250ms : something in the buffer")
 			var msg = self.ser.read()
 			self.ser.flush()
 			if msg[0..1] == bytes("7A7A") && avail == msg.get(4,1)
@@ -350,8 +351,26 @@ class Berryton
 			print("function every_250ms : calling GetFrametype(msg)")
 			self.GetFrametype(msg)
 		else 
-		#	print ("function every_250ms : nothing in the buffer")
+			print ("function every_250ms : nothing in the buffer")
 		end
+	end
+
+	def web_sensor()
+		# tasmota specific separators
+		#{s}: start of line
+		#{m}: separator between name and value
+		#{e}: end of line
+		var msg = string.format(
+			"{s}ACmode{m}%s {e}"
+			"{s}TemperatureSetpoint{m}%f {e}"
+			"{s}FanSpeedSetpoint{m}%s {e}"
+			"{s}OscillationModeSetpoint{m}%s {e}"
+			,self.ACmode, self.TemperatureSetpoint, self.FanSpeedSetpoint , self.OscillationModeSetpoint)
+		tasmota.web_send_decimal(msg)
+	end 
+
+	def getACStatus()
+		print("getACStatus : Publishing the status in JSON")
 	end
 
 	######### main program ########
@@ -364,7 +383,10 @@ class Berryton
 		mqtt.subscribe(self.topicprefix + "temperature/set", /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
 		mqtt.subscribe(self.topicprefix + "testsclim/payloadfromclim", /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
 		mqtt.subscribe(self.topicprefix + self.externaltemptopic, /topic,idx,payload_s,payload_b-> self.MQTTSubscribeDispatcher(topic,idx,payload_s,payload_b)) # this works
-
+		
+		#adding some commands to get/set from http
+		#tasmota.add_cmd("GetAcMode",/payload->self.GetACmode(payload))
+		tasmota.add_cmd("getACStatus",/->self.getACStatus()
 		#check if any temperature setpoint has been saved to flash
 		if persist.member("TempSetpoint") != nil
 			print("persistance : retrieving temperature setpoint from tasmota flash")
@@ -384,20 +406,8 @@ class Berryton
 			persist.TemperatureSetpointToACunit = self.TemperatureSetpointToACunit
 		end
 	end
-
-	def web_sensor()
-		tasmota.web_send_decimal("mymessage")
-		#{s}: start of line
-		#{m}: separator between name and value
-		#{e}: end of line
-		var msg = string.format(
-			"{s}ACmode{m}%s G{e}"..    
-			"{s}TemperatureSetpoint{m}%f {e}"..
-			"{s}FanSpeedSetpoint{m}%s {e}"..
-			"{s}OscillationModeSetpoint{m}%s dps{e}", self.ACmode, self.TemperatureSetpoint, self.FanSpeedSetpoint , self.OscillationModeSetpoint)
-	end
-
 end
 
 Berryton = Berryton()
 tasmota.add_driver(Berryton)
+

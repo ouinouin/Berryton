@@ -12,7 +12,7 @@ the purpose is to be able to drive the airton units (that are skyworth rebranded
 the functionalities targeted for now are : 
 
 - Setting the mode (Fan, dry , heat etc etc)
-- Setting the fan speed (low medium high etc etc
+- Setting the fan speed (low medium high etc etc)
 - Setting the louvres Height or oscillation
 - Setting an external temperature source from mqtt and letting the unit regulate on itself by the help of an hysteresis thermostat function.
 
@@ -104,6 +104,44 @@ note that the thermostat topic is coming from elsewhere
       temperature_state_topic: "tele/Newclim/Actualsetpoint/get"
       precision: 0.1
 
+```
+
+## Harware and connections : 
+I choose some ESP32 from M5stack , the atom series are nice with a small form factor, I use the atom Lite, but the atom S3 is nice too.
+all the ESP32 series should normally do the job despite having some stabilities issues withe ESP32-S2. buy an S3 if you can afford it.
+
+https://shop.m5stack.com/products/atoms3-lite-esp32s3-dev-kit
+https://shop.m5stack.com/products/atom-lite-esp32-development-kit
+
+The connector on the AC unit is a JST SM to my knowledge , the pin spacing is 2.5mm , i could fit on the AC connector  a female 4 pins jst XH connector.
+the pinout of the connector, (connector of AC unit , facing the pins from left to right, key of the connector up.)
+on the ATOM side, there is a grove connector, i cut the one provided with the unit and then did solder the wires of a JST XH provided with 10cm of wire.
+
+```
+1 : Yellow              > +12vdc
+2 : green               > AC unit RX (ESP32 TX, GPIO26 for ATOM LITE)
+3 : Grey (or purple ? ) > AC unit TX (ESP32 RX, GPIO32 for ATOM LITE)
+4 : Black               > GND
+
+``` 
+As the AC unit distributes some 12VDC , you ll have to solder a small DC DC converter , i choose an adjustable one. ideally it should be able to deliver 5V@1A.
+
+I choosed to not put level shifters, despite not being advisable , the level of the serial port of the AC unit is 5VDC , and the pins of an ESP32 are 3.3V , there are a lot of debates amongst the internet to know if we can consider ESP32 as 5V tolerant, as per datasheet it it not, as per my experience, it is 5V tolerant. feel free to do things properly and add a bidirectionnal level shifter.
+
+[here some pics of my setup](ressources/pictures)
+mind that on the pictures the colors on my extension are not the same on both ends of the connectors since i soldered wires in the middle.
+
+## Installing Tasmota
+You dont need a specific version of tasmota to run the software, just install tasmota as per recommended documentation, then upload the berry files through the file manager , see : https://tasmota.github.io/docs/UFS/
+
+The berry language on tasmota is looking for autoexec.be at startup, if present it will execute it. the autoexec.be then just loads Berryton.be
+If you own some hardware with sdcard support, you can also load berryton by changing the autoexec.be , replace 
+```
+load("Berryton.be")
+```
+by 
+```
+load("sd/Berryton.be")
 ```
 
 ## TODO
