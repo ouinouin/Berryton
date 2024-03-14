@@ -122,7 +122,6 @@ on the ATOM side, there is a grove connector, i cut the one provided with the un
 2 : green               > AC unit RX (ESP32 TX, GPIO26 for ATOM LITE)
 3 : Grey (or purple ? ) > AC unit TX (ESP32 RX, GPIO32 for ATOM LITE)
 4 : Black               > GND
-
 ``` 
 As the AC unit distributes some 12VDC , you ll have to solder a small DC DC converter , i choose an adjustable one. ideally it should be able to deliver 5V@1A.
 
