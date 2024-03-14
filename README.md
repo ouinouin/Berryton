@@ -127,7 +127,7 @@ As the AC unit distributes some 12VDC , you ll have to solder a small DC DC conv
 
 I choosed to not put level shifters, despite not being advisable , the level of the serial port of the AC unit is 5VDC , and the pins of an ESP32 are 3.3V , there are a lot of debates amongst the internet to know if we can consider ESP32 as 5V tolerant, as per datasheet it it not, as per my experience, it is 5V tolerant. feel free to do things properly and add a bidirectionnal level shifter.
 
-[here some pics of my setup](ressources/pictures)
+Here [some pics of my setup](ressources/pictures)
 mind that on the pictures the colors on my extension are not the same on both ends of the connectors since i soldered wires in the middle.
 
 ## Installing Tasmota
