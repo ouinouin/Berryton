@@ -54,7 +54,7 @@ You have to make your experience to see what offset to be given for a maximum te
     var externaltemptopic = "nodered/temp-salon"
 
 In this mode , the ESP32 takes care of the regulation, by using and hysteresis control , the hysteresis is set in the code by the variable "hyst"
-this mode is active for both heat and cool modes.
+this mode is active for both "heat" and "cool" modes.
 
 ## Home assistant config
 
