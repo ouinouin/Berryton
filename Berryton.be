@@ -1,4 +1,4 @@
-#airton prtocol from me and brice (pingus.org)
+#airton protocol from me and brice (pingus.org)
 #todo : implement quiet mode on the fan mode
 #todo : check boost mode on the fan mode
 #todo : publish autodiscovery for homeassistant
@@ -16,31 +16,39 @@ var TemperatureSetpoint
 var ACmode
 var incomingpayload = bytes()
 var externaltemptopic = "nodered/temp-salon"
-var internalThermostat = 1
+var internalThermostat = 1 							#1=enables the small hysteresis logic in the code  0 to let the AC unit drive its regulation
 var TemperatureSetpointToACunit
 
 TemperatureSetpointOffset = 8
 # serial communications (pin 26 TX , PIN 32 RX)
 ser = serial(32, 26, 9600, serial.SERIAL_8N1)
 
-#an internal simple thermostat
+#an internal simple thermostat  returns 0 while the unit should stop and 1 while it should start
 var last_thermostat_state
 def thermostat(Setpoint,ActualTemp)
-    
-    print("function thermostat : last_thermostat_state before if: " , last_thermostat_state)
-	print("function thermostat : setpoint : ", Setpoint , "actual temperature : ", ActualTemp , "delta : ", ActualTemp - Setpoint)
-	if ActualTemp - Setpoint > 0.3 && last_thermostat_state!= 0
+    var delta
+	var hyst = 0.3
+	if ACmode == "heat"
+		delta = ActualTemp - Setpoint
+	elif ACmode == "cool"
+		delta = Setpoint - ActualTemp
+	end
+    print("function thermostat : last_thermostat_state" , last_thermostat_state)
+	print("function thermostat : setpoint : ", Setpoint , "actual temperature : ")
+	if (delta > hyst ) && last_thermostat_state!= 0
 		print("function thermostat : temperature > setpoint")
 		last_thermostat_state = 0
 		print("function thermostat : last_thermostat_state Temp - Setpoint > 0.3 : " , last_thermostat_state)
 		return 0
-	elif (ActualTemp - Setpoint < -0.3 ) && last_thermostat_state!= 1
+
+	elif (delta < -hyst ) && last_thermostat_state!= 1
 		print("function thermostat  : temperature < setpoint")
 		last_thermostat_state = 1
 		print("function thermostat : last_thermostat_state Temp - Setpoint < 0.3 : " , last_thermostat_state)
 		return 1
+
 	end
-	print("function thermostat : no action")
+
 end
 
 
@@ -287,44 +295,67 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	print("function MQTTSubscribeDispatcher : received TemperatureSetpoint = ", TemperatureSetpoint)
 	if ACmode == "heat" && internalThermostat == 0
 		TemperatureSetpoint = number((payload_s)) + TemperatureSetpointOffset
-		print("function MQTTSubscribeDispatcher : heating mode, applying offset of :" , TemperatureSetpointOffset , "°C")
-	end
-	if ACmode == "heat" && internalThermostat == 1
+		print("function MQTTSubscribeDispatcher : heating mode, applying positive offset of :" , TemperatureSetpointOffset , "°C")
+	
+	elif ACmode == "heat" && internalThermostat == 1
 		print("function MQTTSubscribeDispatcher : internal_thermostat enabled : saving the setpoint to persistance file") 
 		TemperatureSetpoint = number(payload_s)
 		persist.TempSetpoint = TemperatureSetpoint
+
+	elif ACmode == "cool" && internalThermostat == 0
+		TemperatureSetpoint = number((payload_s)) - TemperatureSetpointOffset
+		print("function MQTTSubscribeDispatcher : cooling mode, applying negative offset of :" , TemperatureSetpointOffset , "°C")
+
+	elif ACmode == "cool" && internalThermostat == 1
+		print("function MQTTSubscribeDispatcher : internal_thermostat enabled : saving the setpoint to persistance file") 
+		TemperatureSetpoint = number(payload_s)
+		persist.TempSetpoint = TemperatureSetpoint
+
+	else
+
 	end
 	print("function MQTTSubscribeDispatcher : publishing immediately TemperatureSetpoint")
 	mqtt.publish(FeedbackTopicPrefix + "Actualsetpoint/get" , payload_s)
 	
    
   #on external temperature reception, we trigger the thermostat, we dont
-  #stop the unit but give a  lower temperature (17°C) to force the AC unit 
+  #stop the unit but give :
+  # a  lower temperature setpoint (17°C) while in heat mode
+  # a higher temperature setpoint (31°c) while in cool mode 
+  #to force the AC unit 
   #to pause with louvre open
   elif topic == externaltemptopic && internalThermostat == 1 
 	print("function MQTTSubscribeDispatcher : received a temperature value from external thermometer : ", number(payload_s) )
 	var thermostat_state = thermostat(TemperatureSetpoint,number(payload_s))
 	print("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
 		if thermostat_state == 1
-			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with 31°C to AC unit")
-			TemperatureSetpointToACunit = 31
+			if   ACmode == "heat"
+				TemperatureSetpointToACunit = 31
+			elif ACmode == "cool"
+				TemperatureSetpointToACunit = 17
+			end
+
+			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
 			persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
 			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
 			ser.write(frametosend)
-			return
 		elif thermostat_state == 0
-			print("function MQTTSubscribeDispatcher : thermostat function returned 0 , sending frame with 17°C to AC unit")
-			TemperatureSetpointToACunit = 17
+			if   ACmode == "heat"
+				TemperatureSetpointToACunit = 17
+			elif ACmode == "cool"
+				TemperatureSetpointToACunit = 31
+			end
+
+			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
 			persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
 			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
 			ser.write(frametosend)
-			return
 		end
 
-  return
+  	return
   end
   
-  # in thermostat mode we 
+  # in thermostat mode we send back the external setpoint #
   if internalThermostat == 1
 	frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
   else

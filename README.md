@@ -53,7 +53,8 @@ You have to make your experience to see what offset to be given for a maximum te
     var internalThermostat = 1
     var externaltemptopic = "nodered/temp-salon"
 
-In hysteresis mode (only tested in heating mode yet) , the unit will set  a temperature higher than your setpoint (+8°C by default). the script is subscribing to your temperature sensor topic : externaltemptopic , and then does the delta between the setpoint and the external temperature value : "**ActualTemp - Setpoint**" , if this result is > 0,3 °C , the unit will switch to a low temperature setpoint (by default 17°C) .
+In this mode , the ESP32 takes care of the regulation, by using and hysteresis control , the hysteresis is set in the code by the variable "hyst"
+this mode is active for both heat and cool modes.
 
 ## Home assistant config
 
