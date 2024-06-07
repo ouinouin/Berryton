@@ -33,18 +33,17 @@ def thermostat(Setpoint,ActualTemp)
 	elif ACmode == "cool"
 		delta = Setpoint - ActualTemp
 	end
-    print("function thermostat : last_thermostat_state" , last_thermostat_state)
-	print("function thermostat : setpoint : ", Setpoint , "actual temperature : ")
+	print("function thermostat : setpoint=", Setpoint , " delta=", delta," last_thermostat_state=",last_thermostat_state )
 	if (delta > hyst ) && last_thermostat_state!= 0
-		print("function thermostat : temperature > setpoint")
+		print("function thermostat : delta > hyst")
 		last_thermostat_state = 0
-		print("function thermostat : last_thermostat_state Temp - Setpoint > 0.3 : " , last_thermostat_state)
+		print("function thermostat : last_thermostat_state=",last_thermostat_state)
 		return 0
 
 	elif (delta < -hyst ) && last_thermostat_state!= 1
-		print("function thermostat  : temperature < setpoint")
+		print("function thermostat  : delta < -hyst ")
 		last_thermostat_state = 1
-		print("function thermostat : last_thermostat_state Temp - Setpoint < 0.3 : " , last_thermostat_state)
+		print("function thermostat : last_thermostat_state=",last_thermostat_state)
 		return 1
 
 	end
@@ -183,24 +182,26 @@ end
 def GetFrametype(payload)
 	var FrameTypeString = "NONE" #frame A3 = feedback from AC unit to wifi module
 	if CheckMessage(payload) == 1
-		print("function GetFrametype : frame CRC seems valid")
+		#print("function GetFrametype : frame CRC seems valid")
 		if payload.size() == 34
-			print("function GetFrametype : seeking frame type on byte 7 : 0x" ,string.hex(payload[7]) ) #debug	
+			#print("function GetFrametype : seeking frame type on byte 7 : 0x" ,string.hex(payload[7]) ) #debug
+			
 			if string.hex(payload[7]) == "A3"
-				print("function GetFrametype : frame type is A3 : AC unit is giving back useful feedback")
+				#print("function GetFrametype : frame type is A3 : AC unit is giving back useful feedback")
+				print("function GetFrametype : valid message from AC unit :", payload.tostring(60))
 				FrameTypeString = "ACFeedback"
 				PublishFeedback(payload)
 				return FrameTypeString
 			else 
-				print("function GetFrametype : frame is 34 bytes long but is not A3 type")
+				#print("function GetFrametype : frame is 34 bytes long but is not A3 type")
 				return "INVALID_FRAME"
 			end	
 		else
-			print("function GetFrametype : frame is not 34 bytes legnth")
+			#print("function GetFrametype : frame is not 34 bytes legnth")
 		end
 		
 	else	
-		print("function GetFrametype : CRC seems invalid, incomplete buffer ?")
+		#print("function GetFrametype : CRC seems invalid, incomplete buffer ?")
 		return "BADCRC"
 	end	
 	
@@ -376,16 +377,16 @@ def getfromserial()
 	    if msg[0..1] == bytes("7A7A") && avail == msg.get(4,1)
 			#print("function GetFromSerial : buffer filled with :", avail , " bytes")
 			#print ("function GetFromSerial : message length :", msg.get(4,1))
-			print("function GetFromSerial : message from AC unit :", msg.tostring(60))
+			#print("function GetFromSerial : message from AC unit :", msg.tostring(60))
 		
 		elif msg[0..1] == bytes("7A7A") && avail > msg.get(4,1)
-			print ("function GetFromSerial : buffer is bigger than frame, cutting frame")
+			#print ("function GetFromSerial : buffer is bigger than frame, cutting frame")
 			var msg2 = msg[msg.get(4,1)..size(msg)-1]
 			msg = msg[0..msg.get(4,1)-1]
-			print("function GetFromSerial : message from AC unit :", msg.tostring(60))
-			print("function GetFromSerial : remaining msg   :", msg2.tostring(60)) #todo , implement a buffer of frames.
+			#print("function GetFromSerial : message from AC unit :", msg.tostring(60))
+			#print("function GetFromSerial : remaining msg   :", msg2.tostring(60)) #todo , implement a buffer of frames.
 		end
-		print("function GetFromSerial : calling GetFrametype(msg)")
+		#print("function GetFromSerial : calling GetFrametype(msg)")
 		GetFrametype(msg)
 	else 
 	#	print ("function GetFromSerial : nothing in the buffer")
