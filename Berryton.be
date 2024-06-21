@@ -338,7 +338,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	print("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
 	if thermostat_state == nil
 		return
-	if thermostat_state
+	elif thermostat_state
 		if   ACmode == "heat"
 			TemperatureSetpointToACunit = 31
 		elif ACmode == "cool"
