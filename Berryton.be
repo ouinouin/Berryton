@@ -32,8 +32,10 @@ def thermostat(Setpoint,ActualTemp)
 		delta = ActualTemp - Setpoint
 	elif ACmode == "cool"
 		delta = Setpoint - ActualTemp
+	else
+		delta = 0.0
 	end
-	print("function thermostat : setpoint=", Setpoint , " delta=", delta," last_thermostat_state=",last_thermostat_state )
+	print("function thermostat : setpoint=", Setpoint , " delta=", delta," last_thermostat_state=",last_thermostat_state)
 	if (delta > hyst ) && last_thermostat_state!= 0
 		print("function thermostat : delta > hyst")
 		last_thermostat_state = 0
