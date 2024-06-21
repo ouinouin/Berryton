@@ -50,6 +50,13 @@ def thermostat(Setpoint,ActualTemp)
 
 end
 
+def StoreIfDifferent(PersistedValue,ValueToCompare)
+	if PersistedValue == ValueToCompare
+		return
+	else 
+		PersistedValue = ValueToCompare
+	end
+end
 
 #modbus CRC16
 def modcrc16(data, poly)	
