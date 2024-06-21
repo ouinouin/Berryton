@@ -161,7 +161,7 @@ def PublishFeedback(payload)
 	#initialize sttings value with first feedback from AC unit to manage restart conditions
 	if FanSpeedSetpoint == nil FanSpeedSetpoint = MyFanSpeed  print("recovered FanSpeedSetpoint : " , FanSpeedSetpoint) end
 	if OscillationModeSetpoint == nil OscillationModeSetpoint = MyOscillationMode print("recovered OscillationModeSetpoint : ", OscillationModeSetpoint) end
-	if TemperatureSetpoint == nil TemperatureSetpoint =  print("recovered TemperatureSetpoint : ", TemperatureSetpoint) end
+	if TemperatureSetpoint == nil print("no TemperatureSetpoint available, check persistance file value :", TemperatureSetpoint) end
 	if ACmode == nil ACmode = MyACmode print("recovered ACmode : ", ACmode) end
 	
 	
