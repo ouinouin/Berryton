@@ -49,7 +49,7 @@ def thermostat(Setpoint,ActualTemp)
 	end
 
 end
-
+# used to write to flash only if values differs
 def StoreIfDifferent(PersistedValue,ValueToCompare)
 	if PersistedValue == ValueToCompare
 		return
