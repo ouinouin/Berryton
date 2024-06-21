@@ -329,38 +329,35 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	print("function MQTTSubscribeDispatcher : received a temperature value from external thermometer : ", number(payload_s) )
 	var thermostat_state = thermostat(TemperatureSetpoint,number(payload_s))
 	print("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
-		if thermostat_state == 1
-			if   ACmode == "heat"
-				TemperatureSetpointToACunit = 31
-			elif ACmode == "cool"
-				TemperatureSetpointToACunit = 17
-			end
-
-			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
-			persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
-			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
-			ser.write(frametosend)
-		elif thermostat_state == 0
-			if   ACmode == "heat"
-				TemperatureSetpointToACunit = 17
-			elif ACmode == "cool"
-				TemperatureSetpointToACunit = 31
-			end
-
-			print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
-			persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
-			frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
-			ser.write(frametosend)
+	if thermostat_state == nil
+		return
+	if thermostat_state
+		if   ACmode == "heat"
+			TemperatureSetpointToACunit = 31
+		elif ACmode == "cool"
+			TemperatureSetpointToACunit = 17
 		end
-
+	else
+		if   ACmode == "heat"
+			TemperatureSetpointToACunit = 17
+		elif ACmode == "cool"
+			TemperatureSetpointToACunit = 31
+		end
+	persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
+	end
+	
+	print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
+	
+	frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
+	ser.write(frametosend)
   	return
   end
   
   # in thermostat mode we send back the external setpoint #
   if internalThermostat == 1
-	frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
+	frametosend = forgepayload(ACmode, FanSpeedSetpoint, OscillationModeSetpoint, TemperatureSetpointToACunit)
   else
-    frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,int(TemperatureSetpoint))
+    frametosend = forgepayload(ACmode, FanSpeedSetpoint, OscillationModeSetpoint, int(TemperatureSetpoint))
   end
 
   print("function MQTTSubscribeDispatcher : sending frame to AC unit: ", frametosend)
@@ -368,7 +365,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
   return true
 end
 
-
+# avail variable contains the nr of char present in the serial buffer
 def getfromserial()
 	var avail = ser.available()
 	if avail != 0
