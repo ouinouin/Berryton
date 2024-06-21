@@ -308,7 +308,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	elif ACmode == "heat" && internalThermostat == 1
 		print("function MQTTSubscribeDispatcher : internal_thermostat enabled : saving the setpoint to persistance file") 
 		TemperatureSetpoint = number(payload_s)
-		persist.TempSetpoint = TemperatureSetpoint
+		StoreIfDifferent(persist.TempSetpoint , TemperatureSetpoint)
 
 	elif ACmode == "cool" && internalThermostat == 0
 		TemperatureSetpoint = number((payload_s)) - TemperatureSetpointOffset
@@ -317,7 +317,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	elif ACmode == "cool" && internalThermostat == 1
 		print("function MQTTSubscribeDispatcher : internal_thermostat enabled : saving the setpoint to persistance file") 
 		TemperatureSetpoint = number(payload_s)
-		persist.TempSetpoint = TemperatureSetpoint
+		StoreIfDifferent(persist.TempSetpoint , TemperatureSetpoint)
 
 	else
 
@@ -350,7 +350,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		elif ACmode == "cool"
 			TemperatureSetpointToACunit = 31
 		end
-	persist.TemperatureSetpointToACunit = TemperatureSetpointToACunit
+	StoreIfDifferent(persist.TemperatureSetpointToACunit , TemperatureSetpointToACunit)
 	end
 	
 	print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
