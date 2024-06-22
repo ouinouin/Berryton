@@ -7,6 +7,7 @@
 import string
 import mqtt
 import persist
+import introspect
 
 var topicprefix = "cmnd/Newclim/"
 var FeedbackTopicPrefix = "tele/Newclim/"
@@ -51,12 +52,14 @@ def thermostat(Setpoint,ActualTemp)
 	end
 
 end
-# used to write to flash only if values differs
-def StoreIfDifferent(PersistedValue,ValueToCompare)
-	if PersistedValue == ValueToCompare
+# used to write to flash only if values differs , storageplace is a string
+def StoreIfDifferent(ValueToCompare,StoragePlace)
+	if number(introspect.get(persist, StoragePlace)) == ValueToCompare
+		print("function StoreIfDifferent : nothing to store")
 		return
 	else 
-		PersistedValue = ValueToCompare
+		introspect.set(persist, StoragePlace,ValueToCompare)
+		print("function StoreIfDifferent : storing the value :",ValueToCompare, "to persist.",StoragePlace)
 	end
 end
 
@@ -78,7 +81,7 @@ def modcrc16(data, poly)
 	return crc
 end
 
-#checking messages incoming from AC unit CRC
+#checking messages incoming from AC unit CRCet
 def CheckMessage(payload)
    #print(payload.size()) #debug
    var MsgCalCrc = modcrc16(payload[0..payload.size()-3])
@@ -308,18 +311,18 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		print("function MQTTSubscribeDispatcher : heating mode, applying positive offset of :" , TemperatureSetpointOffset , "°C")
 	
 	elif ACmode == "heat" && internalThermostat == 1
-		print("function MQTTSubscribeDispatcher : internal_thermostat enabled : saving the setpoint to persistance file") 
 		TemperatureSetpoint = number(payload_s)
-		StoreIfDifferent(persist.TempSetpoint , TemperatureSetpoint)
+		print("function MQTTSubscribeDispatcher : internal_thermostat enabled in heat mode : saving the setpoint",TemperatureSetpoint , " to persistance file if different then previously")
+		StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
 
 	elif ACmode == "cool" && internalThermostat == 0
 		TemperatureSetpoint = number((payload_s)) - TemperatureSetpointOffset
 		print("function MQTTSubscribeDispatcher : cooling mode, applying negative offset of :" , TemperatureSetpointOffset , "°C")
 
 	elif ACmode == "cool" && internalThermostat == 1
-		print("function MQTTSubscribeDispatcher : internal_thermostat enabled : saving the setpoint to persistance file") 
 		TemperatureSetpoint = number(payload_s)
-		StoreIfDifferent(persist.TempSetpoint , TemperatureSetpoint)
+		print("function MQTTSubscribeDispatcher : internal_thermostat enabled in cool mode: saving the setpoint:",TemperatureSetpoint , " to persistance file if different then previously") 
+		StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
 
 	else
 
@@ -352,7 +355,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		elif ACmode == "cool"
 			TemperatureSetpointToACunit = 31
 		end
-	StoreIfDifferent(persist.TemperatureSetpointToACunit , TemperatureSetpointToACunit)
+	StoreIfDifferent(TemperatureSetpointToACunit , TemperatureSetpointToACunit)
 	end
 	
 	print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
