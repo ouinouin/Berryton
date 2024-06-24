@@ -151,11 +151,14 @@ end
 #retrieve the AC setpoint temperature
 def GetTemperatureSetpoint(payload)
 	#print("byte 14 , setpoint temperature: " ,payload.getbits(115,1),payload.getbits(114,1), payload.getbits(113,1), payload.getbits(112,1) ) #debug
-	#TemperatureSetpoint = payload.getbits(112,4) +16
+	if internalThermostat == 0
+		TemperatureSetpoint = payload.getbits(112,4) +16
+		print("function GetTemperatureSetpoint : TemperatureSetpoint retrieved on payload from ACunit : ", TemperatureSetpoint)
 	# will directly return the setpoint received by mqtt
 	#there is a catch here , this function has to be reworked in order to ensure a good sync while using infrared remote
-	TemperatureSetpoint = number(persist.TempSetpoint)
-	print("function GetTemperatureSetpoint : TemperatureSetpoint : ", TemperatureSetpoint)
+	else
+		TemperatureSetpoint = number(persist.TempSetpoint)
+		print("function GetTemperatureSetpoint : TemperatureSetpoint retrieved from persistent memory : ", TemperatureSetpoint)
 	return TemperatureSetpoint
 end
 	
