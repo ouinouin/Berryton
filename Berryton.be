@@ -305,9 +305,9 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
   
   elif topic == (topicprefix + "temperature/set")
 	#some offset trials , the feedback is the temperature without the offset
-	print("function MQTTSubscribeDispatcher : received TemperatureSetpoint = ", TemperatureSetpoint)
+	print("function MQTTSubscribeDispatcher : received TemperatureSetpoint = ", number(payload_s))
 	if ACmode == "heat" && internalThermostat == 0
-		TemperatureSetpoint = number((payload_s)) + TemperatureSetpointOffset
+		TemperatureSetpoint = number(payload_s) + TemperatureSetpointOffset
 		print("function MQTTSubscribeDispatcher : heating mode, applying positive offset of :" , TemperatureSetpointOffset , "°C")
 	
 	elif ACmode == "heat" && internalThermostat == 1
