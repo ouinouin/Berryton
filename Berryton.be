@@ -316,7 +316,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
 
 	elif ACmode == "cool" && internalThermostat == 0
-		TemperatureSetpoint = number((payload_s)) - TemperatureSetpointOffset
+		TemperatureSetpoint = number(payload_s) - TemperatureSetpointOffset
 		print("function MQTTSubscribeDispatcher : cooling mode, applying negative offset of :" , TemperatureSetpointOffset , "°C")
 
 	elif ACmode == "cool" && internalThermostat == 1
