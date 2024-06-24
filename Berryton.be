@@ -160,6 +160,7 @@ def GetTemperatureSetpoint(payload)
 	else
 		TemperatureSetpoint = number(persist.TempSetpoint)
 		print("function GetTemperatureSetpoint : TemperatureSetpoint retrieved from persistent memory : ", TemperatureSetpoint)
+	end
 	return TemperatureSetpoint
 end
 	
