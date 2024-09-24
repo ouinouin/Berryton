@@ -361,7 +361,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		elif ACmode == "cool"
 			TemperatureSetpointToACunit = 31
 		end
-	StoreIfDifferent(TemperatureSetpointToACunit , TemperatureSetpointToACunit)
+	StoreIfDifferent(TemperatureSetpointToACunit , "TemperatureSetpointToACunit")
 	end
 	
 	print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
