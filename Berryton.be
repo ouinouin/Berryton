@@ -425,7 +425,7 @@ if persist.member("TempSetpoint") != nil
 else
 	print("persistance : setting a default temperature setpoint")
 	TemperatureSetpoint = 20
-	persist.TemperatureSetpoint = TemperatureSetpoint
+	persist.TempSetpoint = TemperatureSetpoint
 end
 
 if persist.member("TemperatureSetpointToACunit") != nil
