@@ -176,7 +176,7 @@ def PublishFeedback(payload)
 	else 
 	  TemperatureSetpoint = GetTemperatureSetpoint(payload)
 	end
-	#initialize sttings value with first feedback from AC unit to manage restart conditions
+	#initialize settings value with first feedback from AC unit to manage restart conditions
 	if FanSpeedSetpoint == nil FanSpeedSetpoint = MyFanSpeed  print("recovered FanSpeedSetpoint : " , FanSpeedSetpoint) end
 	if OscillationModeSetpoint == nil OscillationModeSetpoint = MyOscillationMode print("recovered OscillationModeSetpoint : ", OscillationModeSetpoint) end
 	if TemperatureSetpoint == nil print("no TemperatureSetpoint available, check persistance file value :", TemperatureSetpoint) end
@@ -256,7 +256,7 @@ def forgepayload(Acmode,FanSpeed,OscillationMode,TemperatureSP)
 	
 	#setting temperature setpoint on register 13
 	Reg13 = number(TemperatureSP) - 16
-	print("function forgepayload : Register 13 ,temperature setpoint -16 : "  , Reg13)
+	print("function forgepayload : Register 13 ,temperature setpoint :",TemperatureSP," -16 : "  , Reg13)
 				
 	#print("function forgepayload : register 12 , AC mode and fanspeed :", string.hex(Reg12))
 	#print("function forgepayload : register 13 , temperature setpoint :", string.hex(Reg13))
@@ -348,6 +348,7 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	var thermostat_state = thermostat(TemperatureSetpoint,number(payload_s))
 	print("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
 	if thermostat_state == nil
+		print("returned from thermostat function with nothing to do")
 		return
 	elif thermostat_state
 		if   ACmode == "heat"
