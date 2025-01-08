@@ -17,8 +17,9 @@ var TemperatureSetpoint
 var ACmode
 var incomingpayload = bytes()
 var externaltemptopic = "nodered/temp-salon"
-var internalThermostat = 1 							#1=enables the small hysteresis logic in the code  0 to let the AC unit drive its regulation
+var internalThermostat = 1 							#1=enables the hysteresis logic in the code 0 to let the AC unit drive its regulation + adding TemperatureSetpointOffset
 var TemperatureSetpointToACunit
+var ExternalTempValue = 19 							# set to a value in case the temperature update from an external sensor is long.
 
 TemperatureSetpointOffset = 8
 # serial communications (pin 26 TX , PIN 32 RX)
@@ -278,78 +279,86 @@ def forgepayload(Acmode,FanSpeed,OscillationMode,TemperatureSP)
 end
 
 def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
-  var frametosend
-  print("function MQTTSubscribeDispatcher : message received from mqtt")
-  print("function MQTTSubscribeDispatcher : actual ACmode = ", ACmode)
-  print("function MQTTSubscribeDispatcher : actual FanSpeedSetpoint = ", FanSpeedSetpoint)
-  print("function MQTTSubscribeDispatcher : actual OscillationModeSetpoint = ", OscillationModeSetpoint)
-  print("function MQTTSubscribeDispatcher : actual TemperatureSetpoint = ", TemperatureSetpoint)
-  # ensure we received a fisrt feedback from the AC unit 
-  if ACmode == nil || FanSpeedSetpoint == nil || OscillationModeSetpoint == nil || TemperatureSetpoint == nil
-    print("function MQTTSubscribeDispatcher : Some of the variables are not yet received , escaping")
+	var frametosend
+	print("function MQTTSubscribeDispatcher : message received from mqtt")
+	print("function MQTTSubscribeDispatcher : actual ACmode = ", ACmode)
+	print("function MQTTSubscribeDispatcher : actual FanSpeedSetpoint = ", FanSpeedSetpoint)
+	print("function MQTTSubscribeDispatcher : actual OscillationModeSetpoint = ", OscillationModeSetpoint)
+	print("function MQTTSubscribeDispatcher : actual TemperatureSetpoint = ", TemperatureSetpoint)
+	# ensure we received a fisrt feedback from the AC unit 
+	if ACmode == nil || FanSpeedSetpoint == nil || OscillationModeSetpoint == nil || TemperatureSetpoint == nil
+		print("function MQTTSubscribeDispatcher : Some of the variables are not yet received from AC unit , escaping")
+		
+		return
+	end 
+	#we send back gratuitous feedback upon reception to ensure homeassistant gets immediate feedback and sets correctly its values (why doesnt Homeassistant have time setting for the feedback ? )
+	if topic == (topicprefix + "mode/set")
+		ACmode = payload_s
+		print("function MQTTSubscribeDispatcher : received ACmode = ", ACmode)
+		mqtt.publish(FeedbackTopicPrefix + "mode/get" , ACmode)
+		print("function MQTTSubscribeDispatcher : publishing immediately ACmode")
+		
+	elif topic == (topicprefix + "fan/set")
+		FanSpeedSetpoint = payload_s
+		print("function MQTTSubscribeDispatcher : received FanSpeedSetpoint = ", FanSpeedSetpoint)
+		mqtt.publish(FeedbackTopicPrefix + "fan/get" , FanSpeedSetpoint)
+		print("function MQTTSubscribeDispatcher : publishing immediately FanSpeedSetpoint")
+		
+	elif topic == (topicprefix + "swing/set")
+		OscillationModeSetpoint = payload_s
+		print("function MQTTSubscribeDispatcher : received OscillationModeSetpoint = ", OscillationModeSetpoint)
+		mqtt.publish(FeedbackTopicPrefix + "swing/get" , OscillationModeSetpoint)
+		print("function MQTTSubscribeDispatcher : publishing immediately OscillationModeSetpoint")
 	
-	return
-  end 
-  #we send back gratuitous feedback upon reception to ensure homeassistant gets immediate feedback and sets correctly its values (why doesnt Homeassistant have time setting for the feedback ? )
-  if topic == (topicprefix + "mode/set")
-	ACmode = payload_s
-	print("function MQTTSubscribeDispatcher : received ACmode = ", ACmode)
-	mqtt.publish(FeedbackTopicPrefix + "mode/get" , ACmode)
-	print("function MQTTSubscribeDispatcher : publishing immediately ACmode")
-	
-  elif topic == (topicprefix + "fan/set")
-	FanSpeedSetpoint = payload_s
-	print("function MQTTSubscribeDispatcher : received FanSpeedSetpoint = ", FanSpeedSetpoint)
-	mqtt.publish(FeedbackTopicPrefix + "fan/get" , FanSpeedSetpoint)
-	print("function MQTTSubscribeDispatcher : publishing immediately FanSpeedSetpoint")
-	
-  elif topic == (topicprefix + "swing/set")
-	OscillationModeSetpoint = payload_s
-	print("function MQTTSubscribeDispatcher : received OscillationModeSetpoint = ", OscillationModeSetpoint)
-	mqtt.publish(FeedbackTopicPrefix + "swing/get" , OscillationModeSetpoint)
-	print("function MQTTSubscribeDispatcher : publishing immediately OscillationModeSetpoint")
-  
-  elif topic == (topicprefix + "temperature/set")
-	#some offset trials , the feedback is the temperature without the offset
-	print("function MQTTSubscribeDispatcher : received TemperatureSetpoint = ", number(payload_s))
-	if ACmode == "heat" && internalThermostat == 0
-		TemperatureSetpoint = number(payload_s) + TemperatureSetpointOffset
-		print("function MQTTSubscribeDispatcher : heating mode, applying positive offset of :" , TemperatureSetpointOffset , "°C")
-	
-	elif ACmode == "heat" && internalThermostat == 1
-		TemperatureSetpoint = number(payload_s)
-		print("function MQTTSubscribeDispatcher : internal_thermostat enabled in heat mode : saving the setpoint",TemperatureSetpoint , " to persistance file if different then previously")
-		StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
+	elif topic == (topicprefix + "temperature/set")
+		#some offset trials , the feedback is the temperature without the offset
+		print("function MQTTSubscribeDispatcher : received TemperatureSetpoint = ", number(payload_s))
+		
+		if ACmode == "heat" && internalThermostat == 0
+			TemperatureSetpoint = number(payload_s) + TemperatureSetpointOffset
+			print("function MQTTSubscribeDispatcher : heating mode, applying positive offset of :" , TemperatureSetpointOffset , "°C")
+		
+		elif ACmode == "heat" && internalThermostat == 1
+			TemperatureSetpoint = number(payload_s)
+			print("function MQTTSubscribeDispatcher : internal_thermostat enabled in heat mode : saving the setpoint",TemperatureSetpoint , " to persistance file if different then previously")
+			StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
 
-	elif ACmode == "cool" && internalThermostat == 0
-		TemperatureSetpoint = number(payload_s) - TemperatureSetpointOffset
-		print("function MQTTSubscribeDispatcher : cooling mode, applying negative offset of :" , TemperatureSetpointOffset , "°C")
+		elif ACmode == "cool" && internalThermostat == 0
+			TemperatureSetpoint = number(payload_s) - TemperatureSetpointOffset
+			print("function MQTTSubscribeDispatcher : cooling mode, applying negative offset of :" , TemperatureSetpointOffset , "°C")
 
-	elif ACmode == "cool" && internalThermostat == 1
-		TemperatureSetpoint = number(payload_s)
-		print("function MQTTSubscribeDispatcher : internal_thermostat enabled in cool mode: saving the setpoint:",TemperatureSetpoint , " to persistance file if different then previously") 
-		StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
+		elif ACmode == "cool" && internalThermostat == 1
+			TemperatureSetpoint = number(payload_s)
+			print("function MQTTSubscribeDispatcher : internal_thermostat enabled in cool mode: saving the setpoint:",TemperatureSetpoint , " to persistance file if different then previously") 
+			StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
 
-	else
+		else
 
-	end
-	print("function MQTTSubscribeDispatcher : publishing immediately TemperatureSetpoint")
-	mqtt.publish(FeedbackTopicPrefix + "Actualsetpoint/get" , payload_s)
+		end
+		print("function MQTTSubscribeDispatcher : publishing immediately TemperatureSetpoint")
+		mqtt.publish(FeedbackTopicPrefix + "Actualsetpoint/get" , payload_s)
 	
    
-  #on external temperature reception, we trigger the thermostat, we dont
-  #stop the unit but give :
-  # a  lower temperature setpoint (17°C) while in heat mode
-  # a higher temperature setpoint (31°c) while in cool mode 
-  #to force the AC unit 
-  #to pause with louvre open
-  elif topic == externaltemptopic && internalThermostat == 1 
+	#on external temperature reception, we trigger the thermostat, we dont
+	#stop the unit but give :
+	# a  lower temperature setpoint (17°C) while in heat mode
+	# a higher temperature setpoint (31°c) while in cool mode 
+	#to force the AC unit 
+	#to pause with louvre open
+	elif topic == externaltemptopic && internalThermostat == 1 
 	print("function MQTTSubscribeDispatcher : received a temperature value from external thermometer : ", number(payload_s) )
-	var thermostat_state = thermostat(TemperatureSetpoint,number(payload_s))
-	print("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
+	ExternalTempValue = number(payload_s)
+	end
+	#sanitize ExternalTempValue input (skip zero sometimes given by zigbee2mqtt and extremes temps)
+	if ExternalTempValue < 1 || ExternalTempValue > 45
+	print("function MQTTSubscribeDispatcher : value out of range : waiting for valid value")
+	return
+	end
+    # 08/01/2025 we now evaluate the thermostat on any payload reception
+    var thermostat_state = thermostat(TemperatureSetpoint,ExternalTempValue)
+    print("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
 	if thermostat_state == nil
-		print("returned from thermostat function with nothing to do")
-		return
+		print("function MQTTSubscribeDispatcher : returned from thermostat function with nothing to do")
 	elif thermostat_state
 		if   ACmode == "heat"
 			TemperatureSetpointToACunit = 31
@@ -362,26 +371,24 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		elif ACmode == "cool"
 			TemperatureSetpointToACunit = 31
 		end
-	StoreIfDifferent(TemperatureSetpointToACunit , "TemperatureSetpointToACunit")
 	end
-	
-	print("function MQTTSubscribeDispatcher : thermostat function returned 1 , sending frame with",TemperatureSetpointToACunit,"°C to AC unit")
-	
-	frametosend = forgepayload(ACmode,FanSpeedSetpoint,OscillationModeSetpoint,TemperatureSetpointToACunit)
-	ser.write(frametosend)
-  	return
-  end
+	StoreIfDifferent(TemperatureSetpointToACunit , "TemperatureSetpointToACunit")
+	print("function MQTTSubscribeDispatcher : thermostat function returned : ", thermostat_state)
+	print("function MQTTSubscribeDispatcher : TemperatureSetpointToACunit :",TemperatureSetpointToACunit,"°C")	
   
-  # in thermostat mode we send back the external setpoint #
-  if internalThermostat == 1
-	frametosend = forgepayload(ACmode, FanSpeedSetpoint, OscillationModeSetpoint, TemperatureSetpointToACunit)
-  else
-    frametosend = forgepayload(ACmode, FanSpeedSetpoint, OscillationModeSetpoint, int(TemperatureSetpoint))
-  end
-
-  print("function MQTTSubscribeDispatcher : sending frame to AC unit: ", frametosend)
-  ser.write(frametosend)
-  return true
+	# in thermostat mode we send back the external setpoint #
+	if(internalThermostat == 1 &&  topic != externaltemptopic) || (internalThermostat == 1 && thermostat_state != nil)
+		print("function MQTTSubscribeDispatcher : forging payload for internal thermostat mode")
+		frametosend = forgepayload(ACmode, FanSpeedSetpoint, OscillationModeSetpoint, TemperatureSetpointToACunit)
+	elif(internalThermostat == 0)
+		print("function MQTTSubscribeDispatcher : forging payload for AC unit thermostat + offset mode")
+		frametosend = forgepayload(ACmode, FanSpeedSetpoint, OscillationModeSetpoint, int(TemperatureSetpoint))
+	end
+	if frametosend != nil
+	print("function MQTTSubscribeDispatcher : sending frame to AC unit: ", frametosend)
+	ser.write(frametosend)
+	end
+	return true
 end
 
 # avail variable contains the nr of char present in the serial buffer
