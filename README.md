@@ -2,40 +2,40 @@
 
 Drive your airton AC unit from mqtt with an ESP32 module flashed with tasmota and this berry script
 
-discussion here : 
+Discussion here : 
 
 https://github.com/arendst/Tasmota/discussions/17328
-other solutions to drive the ac unit cooked by pingus will soon appear.
+Other solutions to drive the ac unit cooked by pingus will soon appear.
 
-the purpose is to be able to drive the airton units (that are most likely tcl clones) with an esp32 hooked to the serial port of the A/C unit.
+The purpose is to be able to drive the airton units (that are most likely tcl clones) with an esp32 hooked to the serial port of the A/C unit.
 
-the functionalities targeted for now are : 
+The functionalities targeted for now are : 
 
 - Setting the mode (Fan, dry , heat etc etc)
-- Setting the fan speed (low medium high etc etc
+- Setting the fan speed (low medium high etc etc)
 - Setting the louvres Height or oscillation
 - Setting an external temperature source from mqtt and letting the unit regulate on itself by the help of an hysteresis thermostat function.
 
 As not being a coder (this is my first published project), the code quality is likely to be poor , but the initial functionalities are working.
 
-the initial functionality is working, while first running the script, wait 1 to 2 minutes for the script to recover the ac unit status to give correct feedback on mqtt.
+The initial functionality is working, while first running the script, wait 1 to 2 minutes for the script to recover the ac unit status to give correct feedback on mqtt.
 
-i run this script with a M5stack atom ESP32 , mind that you need a bidirectional level shifter since the signals sent by the AC unit is in 5V.
+I run this script with a M5stack atom ESP32 , mind that you need a bidirectional level shifter since the signals sent by the AC unit is in 5V.
 there is a lot of discussions on the internet to know if ESP32 is or is not 5V tolerant. For now i run without level shifter and it still works after 1 year.
 
 
-comments and contributions are welcome.
+Comments and contributions are welcome.
 
 
 modbus crc snippet from  https://github.com/peepshow-21/ns-flash/blob/master/berry/nxpanel.be
 
 ## Regulation
 
-two modes are actually available, one letting just the AC unit itself regulating on its own internal sensor (poor results) and one relying on an hysteresis thermostat coded in the berry script
+Two modes are actually available, one letting just the AC unit itself regulating on its own internal sensor (poor results) and one relying on an hysteresis thermostat coded in the berry script
 
-in heat mode, you have to mind about using the remote control, as the remote will backfeed a value to the system, the berry code will then substract the offset value to the value cyclically retrieved from the AC unit and feed it to MQTT.
+In heat mode, you have to mind about using the remote control, as the remote will backfeed a value to the system, the berry code will then substract the offset value to the value cyclically retrieved from the AC unit and feed it to MQTT.
 
-### offset mode
+### Offset mode
 
     var internalThermostat = 0
 In heating mode an offset is implemented (TemperatureSetpointOffset). this offset is meant to be transparent from the homeassistant point of view.
@@ -48,7 +48,7 @@ bigger rooms might require a higher offset.
 
 You have to make your experience to see what offset to be given for a maximum temperature stability on your room.
 
-### hysteresis mode
+### Hysteresis mode
 
     var internalThermostat = 1
     var externaltemptopic = "nodered/temp-salon"
@@ -60,7 +60,7 @@ this mode is active for both "heat" and "cool" modes.
 
 Associated homeassistant configuration to append in your configuration.yaml of homeassistant
 
-note that the thermostat topic is coming from elsewhere
+Note that the thermostat topic is coming from elsewhere
 
 ```
     - name: NewAirton
