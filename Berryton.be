@@ -313,28 +313,23 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	elif topic == (topicprefix + "temperature/set")
 		#some offset trials , the feedback is the temperature without the offset
 		print("function MQTTSubscribeDispatcher : received TemperatureSetpoint = ", number(payload_s))
-		
+
 		if ACmode == "heat" && internalThermostat == 0
 			TemperatureSetpoint = number(payload_s) + TemperatureSetpointOffset
 			print("function MQTTSubscribeDispatcher : heating mode, applying positive offset of :" , TemperatureSetpointOffset , "°C")
 		
-		elif ACmode == "heat" && internalThermostat == 1
+		elif internalThermostat == 1
 			TemperatureSetpoint = number(payload_s)
-			print("function MQTTSubscribeDispatcher : internal_thermostat enabled in heat mode : saving the setpoint",TemperatureSetpoint , " to persistance file if different then previously")
-			StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
+			print("function MQTTSubscribeDispatcher : internal_thermostat enabled in : ", ACmode, " mode : saving the setpoint: ",TemperatureSetpoint , " to persistance file if different then previously")
+			
 
 		elif ACmode == "cool" && internalThermostat == 0
 			TemperatureSetpoint = number(payload_s) - TemperatureSetpointOffset
 			print("function MQTTSubscribeDispatcher : cooling mode, applying negative offset of :" , TemperatureSetpointOffset , "°C")
 
-		elif ACmode == "cool" && internalThermostat == 1
-			TemperatureSetpoint = number(payload_s)
-			print("function MQTTSubscribeDispatcher : internal_thermostat enabled in cool mode: saving the setpoint:",TemperatureSetpoint , " to persistance file if different then previously") 
-			StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
-
-		else
 
 		end
+		StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
 		print("function MQTTSubscribeDispatcher : publishing immediately TemperatureSetpoint")
 		mqtt.publish(FeedbackTopicPrefix + "Actualsetpoint/get" , payload_s)
 	
