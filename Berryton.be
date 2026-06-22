@@ -22,6 +22,13 @@ var debug = 1 										#1=print debug messages on the console, 0=stay silent
 var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
 
+# --- vocabulary of the regulation variables ---
+# internal_thermostat            : 1 = the ESP regulates (hysteresis) ; 0 = the AC regulates on its own sensor (offset)
+# temperature_setpoint           : the real setpoint, what the user/HA asks for (and what we report back to HA)
+# temperature_setpoint_to_ac_unit: the value actually pushed to the AC in hysteresis mode ; forced to 17 or 31°C
+#                                  to make the unit run flat out or pause (only meaningful when internal_thermostat == 1)
+# temperature_setpoint_offset    : in offset mode, added to the setpoint so the AC's higher/enclosed sensor still
+#                                  regulates the room correctly ; subtracted again before reporting back to HA
 var temperature_setpoint_offset = 8
 # serial communications (pin 26 TX , PIN 32 RX)
 ser = serial(32, 26, 9600, serial.SERIAL_8N1)
@@ -356,32 +363,40 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 		dprint("function mqtt_subscribe_dispatcher : received a temperature value from external thermometer : ", number(payload_s) )
 		external_temp_value = number(payload_s)
 	end
-	#sanitize external_temp_value input (skip zero sometimes given by zigbee2mqtt and extremes temps)
-	if external_temp_value < 1 || external_temp_value > 45
-		dprint("function mqtt_subscribe_dispatcher : value out of range : waiting for valid value")
-		return
-	end
-	# 08/01/2025 we now evaluate the thermostat on any payload reception
-	var thermostat_state = thermostat(temperature_setpoint,external_temp_value)
-	dprint("function mqtt_subscribe_dispatcher : thermostat_state : " ,thermostat_state)
-	if thermostat_state == nil
-		dprint("function mqtt_subscribe_dispatcher : returned from thermostat function with nothing to do")
-	elif thermostat_state
-		if   ac_mode == "heat"
-			temperature_setpoint_to_ac_unit = 31
-		elif ac_mode == "cool"
-			temperature_setpoint_to_ac_unit = 17
+	# The hysteresis thermostat only matters when the ESP regulates (internal_thermostat == 1).
+	# In offset mode (== 0) the AC regulates on its own sensor, so we skip all of this : no
+	# useless flash write, and the thermostat never runs for nothing.
+	# thermostat_state stays nil in offset mode (the send block below short-circuits on it).
+	var thermostat_state
+	if internal_thermostat == 1
+		#sanitize external_temp_value input (skip zero sometimes given by zigbee2mqtt and extremes temps)
+		if external_temp_value < 1 || external_temp_value > 45
+			# invalid reading : skip the regulation but keep going, so a user command is still sent
+			dprint("function mqtt_subscribe_dispatcher : external temp out of range : skipping thermostat")
+		else
+			# 08/01/2025 we evaluate the thermostat on any payload reception
+			thermostat_state = thermostat(temperature_setpoint,external_temp_value)
+			dprint("function mqtt_subscribe_dispatcher : thermostat_state : " ,thermostat_state)
+			if thermostat_state == nil
+				dprint("function mqtt_subscribe_dispatcher : returned from thermostat function with nothing to do")
+			elif thermostat_state
+				if   ac_mode == "heat"
+					temperature_setpoint_to_ac_unit = 31
+				elif ac_mode == "cool"
+					temperature_setpoint_to_ac_unit = 17
+				end
+			else
+				if   ac_mode == "heat"
+					temperature_setpoint_to_ac_unit = 17
+				elif ac_mode == "cool"
+					temperature_setpoint_to_ac_unit = 31
+				end
+			end
+			store_if_different(temperature_setpoint_to_ac_unit , "temperature_setpoint_to_ac_unit")
+			dprint("function mqtt_subscribe_dispatcher : thermostat function returned : ", thermostat_state)
+			dprint("function mqtt_subscribe_dispatcher : temperature_setpoint_to_ac_unit :",temperature_setpoint_to_ac_unit,"°C")
 		end
-	else
-		if   ac_mode == "heat"
-			temperature_setpoint_to_ac_unit = 17
-		elif ac_mode == "cool"
-			temperature_setpoint_to_ac_unit = 31
-		end
 	end
-	store_if_different(temperature_setpoint_to_ac_unit , "temperature_setpoint_to_ac_unit")
-	dprint("function mqtt_subscribe_dispatcher : thermostat function returned : ", thermostat_state)
-	dprint("function mqtt_subscribe_dispatcher : temperature_setpoint_to_ac_unit :",temperature_setpoint_to_ac_unit,"°C")
 
 	# in thermostat mode we send back the external setpoint #
 	if(internal_thermostat == 1 &&  topic != external_temp_topic) || (internal_thermostat == 1 && thermostat_state != nil)
