@@ -488,6 +488,13 @@ end
 #apply a control command coming from the web UI panel, reusing the MQTT dispatcher path.
 #kind is "mode" | "fan" | "swing" | "temperature".
 def berryton_apply(kind, value)
+	#optimistic UI update : reflect the command in the live state right away so the panel
+	#updates immediately, without waiting for the AC to echo back a feedback frame.
+	if   kind == "mode"        global.berryton_state["mode"] = value
+	elif kind == "fan"         global.berryton_state["fan"] = value
+	elif kind == "swing"       global.berryton_state["swing"] = value
+	elif kind == "temperature" global.berryton_state["setpoint"] = value
+	end
 	mqtt_subscribe_dispatcher(cfg.topic_prefix + kind + "/set", 0, str(value), nil)
 end
 global.berryton_apply = berryton_apply
