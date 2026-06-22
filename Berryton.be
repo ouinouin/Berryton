@@ -1,13 +1,13 @@
 #airton protocol from me and brice (pingus.org)
 #todo : implement quiet mode on the fan mode
 #todo : check boost mode on the fan mode
-#todo : publish autodiscovery for homeassistant
 # crc snippet from  https://github.com/peepshow-21/ns-flash/blob/master/berry/nxpanel.be
 
 import string
 import mqtt
 import persist
 import introspect
+import json
 
 var topic_prefix = "cmnd/Newclim/"
 var feedback_topic_prefix = "tele/Newclim/"
@@ -21,6 +21,13 @@ var hyst = 0.3 										#hysteresis (in °C) used by the internal thermostat (i
 var debug = 1 										#1=print debug messages on the console, 0=stay silent
 var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
+
+# --- Home Assistant MQTT autodiscovery settings (will be editable from the config page) ---
+var ha_discovery_enabled = 1 						#1=publish the HA autodiscovery config on connect, 0=don't
+var ha_full_command_set = 0 						#0=simplified fan/swing menus, 1=full set (incl. stepless and sweep modes)
+var ha_device_name = "Airton" 						#device/entity name shown in HA
+var ha_unique_id = "berryton_newclim" 				#unique id / discovery object id
+var ha_current_temperature_topic = external_temp_topic 	#room temperature source reported to HA
 
 # --- vocabulary of the regulation variables ---
 # internal_thermostat            : 1 = the ESP regulates (hysteresis) ; 0 = the AC regulates on its own sensor (offset)
@@ -445,6 +452,48 @@ def get_from_serial()
 	end
 end
 
+#publish the Home Assistant MQTT climate autodiscovery config (retained) so HA creates the
+#entity by itself. Topics mirror exactly what the script already listens to / publishes.
+def publish_ha_discovery()
+	if !ha_discovery_enabled return end
+	#simplified menus by default ; the full set adds stepless + the sweep oscillation modes
+	var fan_modes = ["auto","low","low-medium","medium","medium-high","high","turbo"]
+	var swing_modes = ["off","on","high","medium-high","medium","medium-low","low"]
+	if ha_full_command_set == 1
+		fan_modes = ["auto","low","low-medium","medium","medium-high","high","stepless","turbo"]
+		swing_modes = ["off","on","high","medium-high","medium","medium-low","low","sweep 1-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6","sweep 3-5"]
+	end
+	var cfg = {
+		"name": ha_device_name,
+		"unique_id": ha_unique_id,
+		"modes": ["off","auto","cool","heat","dry","fan_only"],
+		"fan_modes": fan_modes,
+		"swing_modes": swing_modes,
+		"min_temp": 16,
+		"max_temp": 31,
+		"temp_step": 1,
+		"precision": 0.1,
+		"mode_command_topic": topic_prefix + "mode/set",
+		"mode_state_topic": feedback_topic_prefix + "mode/get",
+		"fan_mode_command_topic": topic_prefix + "fan/set",
+		"fan_mode_state_topic": feedback_topic_prefix + "fan/get",
+		"swing_mode_command_topic": topic_prefix + "swing/set",
+		"swing_mode_state_topic": feedback_topic_prefix + "swing/get",
+		"temperature_command_topic": topic_prefix + "temperature/set",
+		"temperature_state_topic": feedback_topic_prefix + "Actualsetpoint/get",
+		"current_temperature_topic": ha_current_temperature_topic,
+		"device": {
+			"identifiers": [ha_unique_id],
+			"name": ha_device_name,
+			"manufacturer": "Airton",
+			"model": "TCL clone (Berryton)"
+		}
+	}
+	var config_topic = "homeassistant/climate/" + ha_unique_id + "/config"
+	mqtt.publish(config_topic, json.dump(cfg), true)        #retain = true so HA picks it up anytime
+	dprint("function publish_ha_discovery : published HA autodiscovery to ", config_topic)
+end
+
 ######### main program ########
 
 dprint("starting program : mqtt topics", topic_prefix , feedback_topic_prefix )
@@ -473,6 +522,10 @@ else
 	temperature_setpoint_to_ac_unit = 17
 	persist.temperature_setpoint_to_ac_unit = temperature_setpoint_to_ac_unit
 end
+
+#publish HA autodiscovery on every MQTT (re)connection, plus once now in case we are already connected
+tasmota.add_rule("Mqtt#Connected", publish_ha_discovery)
+publish_ha_discovery()
 
 def loop_me()
 	# wrap in try/except so an unexpected exception never breaks the polling chain :
