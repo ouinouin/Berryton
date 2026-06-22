@@ -26,6 +26,7 @@ var BCFG_FIELDS = [
 	["ha_unique_id",                 "str",  "HA unique id",               ""],
 	["ha_current_temperature_topic", "str",  "HA current-temp topic",      ""],
 	["debug",                        "bool", "Debug logging",              ""],
+	["serial_emulation",             "bool", "Serial emulation",          "Bench only: fake AC feedback frames when no real unit is connected"],
 ]
 
 class BerrytonConfigPage

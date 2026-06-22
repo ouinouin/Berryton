@@ -18,13 +18,14 @@ class BerrytonConfig
 	var external_temp_mqtt_enabled, external_temp_topic
 	var external_temp_http_enabled, external_temp_http_url, external_temp_http_interval
 	var ha_discovery_enabled, ha_full_command_set, ha_device_name, ha_unique_id, ha_current_temperature_topic
+	var serial_emulation
 	#list of the persisted settings (stored in flash under "cfg_<name>")
 	static keys = ["debug","internal_thermostat","hyst","temperature_setpoint_offset",
 	               "topic_prefix","feedback_topic_prefix",
 	               "external_temp_mqtt_enabled","external_temp_topic",
 	               "external_temp_http_enabled","external_temp_http_url","external_temp_http_interval",
 	               "ha_discovery_enabled","ha_full_command_set","ha_device_name",
-	               "ha_unique_id","ha_current_temperature_topic"]
+	               "ha_unique_id","ha_current_temperature_topic","serial_emulation"]
 
 	def init()
 		#defaults used on first boot, before anything has been saved to flash
@@ -44,6 +45,7 @@ class BerrytonConfig
 		self.ha_device_name = "Airton"
 		self.ha_unique_id = "berryton_newclim"
 		self.ha_current_temperature_topic = self.external_temp_topic
+		self.serial_emulation = 0                         #1=fake AC feedback frames for bench testing (no real unit)
 		self.load()
 	end
 
@@ -498,6 +500,9 @@ def berryton_apply(kind, value)
 	mqtt_subscribe_dispatcher(cfg.topic_prefix + kind + "/set", 0, str(value), nil)
 end
 global.berryton_apply = berryton_apply
+
+#expose the frame-processing entry so the serial-emulation module can inject synthetic A3 frames
+global.berryton_feed_frame = get_frame_type
 
 # avail variable contains the nr of char present in the serial buffer
 def get_from_serial()
