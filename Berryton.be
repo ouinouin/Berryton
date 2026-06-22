@@ -18,6 +18,7 @@ var ACmode
 var incomingpayload = bytes()
 var externaltemptopic = "nodered/temp-salon"
 var internalThermostat = 1 							#1=enables the hysteresis logic in the code 0 to let the AC unit drive its regulation + adding TemperatureSetpointOffset
+var hyst = 0.3 										#hysteresis (in °C) used by the internal thermostat (internalThermostat=1)
 var TemperatureSetpointToACunit
 var ExternalTempValue = 19 							# set to a value in case the temperature update from an external sensor is long.
 
@@ -29,7 +30,6 @@ ser = serial(32, 26, 9600, serial.SERIAL_8N1)
 var last_thermostat_state
 def thermostat(Setpoint,ActualTemp)
     var delta
-	var hyst = 0.3
 	if ACmode == "heat"
 		delta = ActualTemp - Setpoint
 	elif ACmode == "cool"
