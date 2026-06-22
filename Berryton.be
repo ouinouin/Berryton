@@ -540,6 +540,8 @@ def publish_ha_discovery()
 	mqtt.publish(config_topic, json.dump(disco), true)        #retain = true so HA picks it up anytime
 	dprint("function publish_ha_discovery : published HA autodiscovery to ", config_topic)
 end
+#expose it so the separate config-page module can republish discovery after a settings change
+global.berryton_publish_discovery = publish_ha_discovery
 
 #extract the first number found in a string (handles "21.5", "21.4 C", or a simple JSON like {"t":-3.5})
 #note : on a multi-field JSON it returns the FIRST number, so point the URL at a temperature-only endpoint
