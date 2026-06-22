@@ -69,6 +69,9 @@ end
 global.berryton_cfg = BerrytonConfig()
 var cfg = global.berryton_cfg
 
+#latest known values, exposed for the web UI control panel (see berryton_panel.be)
+global.berryton_state = {"internal_temp":nil, "external_temp":nil, "mode":nil, "fan":nil, "swing":nil, "setpoint":nil}
+
 #runtime state (not user settings ; the tunable settings live in the BerrytonConfig object 'cfg' below)
 var fan_speed_setpoint
 var oscillation_mode_setpoint
@@ -262,6 +265,13 @@ def publish_feedback(payload)
 	if ac_mode == nil ac_mode = my_ac_mode dprint("recovered ac_mode : ", ac_mode) end
 
 
+	#update the live state for the web UI panel
+	global.berryton_state["internal_temp"] = my_temperature
+	global.berryton_state["mode"] = my_ac_mode
+	global.berryton_state["fan"] = my_fan_speed
+	global.berryton_state["swing"] = my_oscillation_mode
+	global.berryton_state["setpoint"] = temperature_setpoint
+
 	dprint("function publish_feedback : got all needed value, publishing in mqtt topics")
 	mqtt.publish(cfg.feedback_topic_prefix + "mode/get" , my_ac_mode)
 	#dprint("function publish_feedback : published FanSpeedFeedback")
@@ -423,6 +433,7 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 	elif topic == cfg.external_temp_topic && cfg.internal_thermostat == 1
 		dprint("function mqtt_subscribe_dispatcher : received a temperature value from external thermometer : ", number(payload_s) )
 		external_temp_value = number(payload_s)
+		global.berryton_state["external_temp"] = external_temp_value
 	end
 	# The hysteresis thermostat only matters when the ESP regulates (internal_thermostat == 1).
 	# In offset mode (== 0) the AC regulates on its own sensor, so we skip all of this : no
@@ -473,6 +484,13 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 	end
 	return true
 end
+
+#apply a control command coming from the web UI panel, reusing the MQTT dispatcher path.
+#kind is "mode" | "fan" | "swing" | "temperature".
+def berryton_apply(kind, value)
+	mqtt_subscribe_dispatcher(cfg.topic_prefix + kind + "/set", 0, str(value), nil)
+end
+global.berryton_apply = berryton_apply
 
 # avail variable contains the nr of char present in the serial buffer
 def get_from_serial()
