@@ -7,24 +7,25 @@ import webserver
 import introspect
 import string
 
-#field descriptors : [config key, type, label]. type is "bool" (checkbox), "num" (number) or "str" (text).
+#field descriptors : [config key, type, label, hint]. type is "bool" (checkbox), "num" (number) or
+#"str" (text). hint is an optional wrapping help line shown under the field ("" for none).
 var BCFG_FIELDS = [
-	["internal_thermostat",          "bool", "Internal thermostat (1=ESP hysteresis, 0=AC own sensor + offset)"],
-	["hyst",                         "num",  "Hysteresis (°C)"],
-	["temperature_setpoint_offset",  "num",  "Setpoint offset for AC-sensor mode (°C)"],
-	["external_temp_mqtt_enabled",   "bool", "External temperature from MQTT"],
-	["external_temp_topic",          "str",  "MQTT temperature topic"],
-	["external_temp_http_enabled",   "bool", "External temperature from HTTP GET"],
-	["external_temp_http_url",       "str",  "HTTP temperature URL"],
-	["external_temp_http_interval",  "num",  "HTTP poll interval (s)"],
-	["topic_prefix",                 "str",  "MQTT command topic prefix"],
-	["feedback_topic_prefix",        "str",  "MQTT feedback topic prefix"],
-	["ha_discovery_enabled",         "bool", "Publish Home Assistant autodiscovery"],
-	["ha_full_command_set",          "bool", "Full fan/swing command set (vs simplified)"],
-	["ha_device_name",               "str",  "HA device name"],
-	["ha_unique_id",                 "str",  "HA unique id"],
-	["ha_current_temperature_topic", "str",  "HA current-temperature topic"],
-	["debug",                        "bool", "Debug logging on console"],
+	["internal_thermostat",          "bool", "Internal thermostat",        "On: ESP regulates (hysteresis). Off: AC regulates on its own sensor + offset"],
+	["hyst",                         "num",  "Hysteresis (°C)",            ""],
+	["temperature_setpoint_offset",  "num",  "AC-sensor offset (°C)",      "Only used when the internal thermostat is off"],
+	["external_temp_mqtt_enabled",   "bool", "Temp. from MQTT",            ""],
+	["external_temp_topic",          "str",  "MQTT temperature topic",     ""],
+	["external_temp_http_enabled",   "bool", "Temp. from HTTP GET",        ""],
+	["external_temp_http_url",       "str",  "HTTP temperature URL",       ""],
+	["external_temp_http_interval",  "num",  "HTTP poll interval (s)",     ""],
+	["topic_prefix",                 "str",  "MQTT command prefix",        ""],
+	["feedback_topic_prefix",        "str",  "MQTT feedback prefix",       ""],
+	["ha_discovery_enabled",         "bool", "Publish HA autodiscovery",   ""],
+	["ha_full_command_set",          "bool", "Full command set",          "Expose every fan/swing mode (incl. stepless & sweep) instead of the simplified menu"],
+	["ha_device_name",               "str",  "HA device name",             ""],
+	["ha_unique_id",                 "str",  "HA unique id",               ""],
+	["ha_current_temperature_topic", "str",  "HA current-temp topic",      ""],
+	["debug",                        "bool", "Debug logging",              ""],
 ]
 
 class BerrytonConfigPage
@@ -63,17 +64,18 @@ class BerrytonConfigPage
 		var key = f[0]
 		var typ = f[1]
 		var label = webserver.html_escape(f[2])
+		var hint = (size(f) > 3 && f[3] != "") ? "<br><small style='opacity:0.7'>" + webserver.html_escape(f[3]) + "</small>" : ""
 		var val = introspect.get(cfg, key)
 		if typ == "bool"
 			var checked = (val == 1) ? " checked" : ""
 			webserver.content_send(string.format(
-				"<p><label><input type='checkbox' name='%s'%s> %s</label></p>", key, checked, label))
+				"<p><label><input type='checkbox' name='%s'%s> %s</label>%s</p>", key, checked, label, hint))
 		else
 			var t = (typ == "num") ? "number" : "text"
 			var step = (typ == "num") ? " step='any'" : ""
 			webserver.content_send(string.format(
-				"<p><b>%s</b><br><input type='%s'%s name='%s' value='%s' style='width:100%%'></p>",
-				label, t, step, key, webserver.html_escape(str(val))))
+				"<p><b>%s</b>%s<br><input type='%s'%s name='%s' value='%s' style='width:100%%;box-sizing:border-box'></p>",
+				label, hint, t, step, key, webserver.html_escape(str(val))))
 		end
 	end
 
@@ -99,11 +101,12 @@ class BerrytonConfigPage
 		if saved
 			webserver.content_send("<p style='color:green'><b>Settings saved.</b> Topic/source changes apply after a Berry restart.</p>")
 		end
+		webserver.content_send("<div style='max-width:480px;margin:0 auto;text-align:left'>")
 		webserver.content_send("<form action='berryton' method='get'>")
 		for f : BCFG_FIELDS
 			self.render_field(f, cfg)
 		end
-		webserver.content_send("<br><button name='save' class='button bgrn' value='1'>Save</button></form>")
+		webserver.content_send("<br><button name='save' class='button bgrn' value='1'>Save</button></form></div>")
 		webserver.content_button(webserver.BUTTON_CONFIGURATION)   #back to Configuration menu
 		webserver.content_stop()
 	end
