@@ -15,7 +15,6 @@ var fan_speed_setpoint
 var oscillation_mode_setpoint
 var temperature_setpoint
 var ac_mode
-var incoming_payload = bytes()
 var external_temp_topic = "nodered/temp-salon"
 var internal_thermostat = 1 							#1=enables the hysteresis logic in the code 0 to let the AC unit drive its regulation + adding temperature_setpoint_offset
 var hyst = 0.3 										#hysteresis (in °C) used by the internal thermostat (internal_thermostat=1)
@@ -23,7 +22,7 @@ var debug = 1 										#1=print debug messages on the console, 0=stay silent
 var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
 
-temperature_setpoint_offset = 8
+var temperature_setpoint_offset = 8
 # serial communications (pin 26 TX , PIN 32 RX)
 ser = serial(32, 26, 9600, serial.SERIAL_8N1)
 
@@ -144,7 +143,7 @@ end
 
 #retrieve the AC oscillation mode from the AC unit frame
 def get_oscillation_mode(payload)
-	var oscillation_mode_list = ["off", "on" ,"high","medium-high","medium","medium-low","low","sweep 3-5","sweep 3-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6"]
+	var oscillation_mode_list = ["off", "on" ,"high","medium-high","medium","medium-low","low","sweep 1-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6","sweep 3-5"]
 	#dprint("function get_oscillation_mode : byte 15 : 0x" ,string.hex(payload[15]), " Oscillation mode up/down 4 bits value :",payload.getbits(123,1), payload.getbits(122,1), payload.getbits(121,1), payload.getbits(120,1)) #debug
 	var oscillation_mode_string = oscillation_mode_list[payload.getbits(120,4)]
 	dprint("function get_oscillation_mode : oscillation_mode_string = ", oscillation_mode_string)
@@ -251,23 +250,26 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	var reg14 = 0x00
 	var reg15 = 0x98 #config word
 	if ac_mode != "off"
-		reg12= ac_mode_values[ac_mode] | 0x08
+		reg12= ac_mode_values.find(ac_mode, 0x00) | 0x08
 	else
 		reg12=  0x00
 	end
 
 	#setting fan_speed on register 12 of the frame
 	if ac_mode != "turbo"
-		reg12 = reg12 |	fan_mode_values[fan_speed]
+		reg12 = reg12 |	fan_mode_values.find(fan_speed, 0x00)
 	elif ac_mode == "turbo" #todo , check if its worth it to separate turbo mode
-		reg12 = reg12 |	fan_mode_values[fan_speed]
+		reg12 = reg12 |	fan_mode_values.find(fan_speed, 0x00)
 	end
 
 	#setting swing mode (oscillation ouf louvres ) on register 14 of the frame
-	reg14 = reg14 |	oscillation_mode_values[oscillation_mode]
+	reg14 = reg14 |	oscillation_mode_values.find(oscillation_mode, 0x00)
 
 	#setting temperature setpoint on register 13
 	reg13 = number(temperature_sp) - 16
+	#clamp to a valid register value (0..15 => 16..31°C) to avoid a negative/out-of-range byte
+	if reg13 < 0 reg13 = 0 end
+	if reg13 > 15 reg13 = 15 end
 	dprint("function forge_payload : Register 13 ,temperature setpoint :",temperature_sp," -16 : "  , reg13)
 
 	#dprint("function forge_payload : register 12 , AC mode and fanspeed :", string.hex(reg12))
@@ -404,11 +406,11 @@ def get_from_serial()
 		ser.flush()
 		if msg[0..1] == bytes("7A7A") && avail == msg.get(4,1)
 			#dprint("function get_from_serial : buffer filled with :", avail , " bytes")
-			#print ("function get_from_serial : message length :", msg.get(4,1))
+			#dprint ("function get_from_serial : message length :", msg.get(4,1))
 			#dprint("function get_from_serial : message from AC unit :", msg.tostring(60))
 
 		elif msg[0..1] == bytes("7A7A") && avail > msg.get(4,1)
-			#print ("function get_from_serial : buffer is bigger than frame, cutting frame")
+			#dprint ("function get_from_serial : buffer is bigger than frame, cutting frame")
 			var msg2 = msg[msg.get(4,1)..size(msg)-1]
 			msg = msg[0..msg.get(4,1)-1]
 			#dprint("function get_from_serial : message from AC unit :", msg.tostring(60))
@@ -417,7 +419,7 @@ def get_from_serial()
 		#dprint("function get_from_serial : calling get_frame_type(msg)")
 		get_frame_type(msg)
 	else
-		#	print ("function get_from_serial : nothing in the buffer")
+		#	dprint ("function get_from_serial : nothing in the buffer")
 	end
 end
 
