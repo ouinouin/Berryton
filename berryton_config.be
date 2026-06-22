@@ -11,6 +11,7 @@ import string
 #"str" (text). hint is an optional wrapping help line shown under the field ("" for none).
 var BCFG_FIELDS = [
 	["internal_thermostat",          "bool", "Internal thermostat",        "On: ESP regulates (hysteresis). Off: AC regulates on its own sensor + offset"],
+	["beep",                         "bool", "AC beep on command",         "Off makes the unit silent on each command (byte 16)"],
 	["hyst",                         "num",  "Hysteresis (°C)",            ""],
 	["temperature_setpoint_offset",  "num",  "AC-sensor offset (°C)",      "Only used when the internal thermostat is off"],
 	["external_temp_mqtt_enabled",   "bool", "Temp. from MQTT",            ""],

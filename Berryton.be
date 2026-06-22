@@ -18,14 +18,14 @@ class BerrytonConfig
 	var external_temp_mqtt_enabled, external_temp_topic
 	var external_temp_http_enabled, external_temp_http_url, external_temp_http_interval
 	var ha_discovery_enabled, ha_full_command_set, ha_device_name, ha_unique_id, ha_current_temperature_topic
-	var serial_emulation
+	var serial_emulation, beep
 	#list of the persisted settings (stored in flash under "cfg_<name>")
 	static keys = ["debug","internal_thermostat","hyst","temperature_setpoint_offset",
 	               "topic_prefix","feedback_topic_prefix",
 	               "external_temp_mqtt_enabled","external_temp_topic",
 	               "external_temp_http_enabled","external_temp_http_url","external_temp_http_interval",
 	               "ha_discovery_enabled","ha_full_command_set","ha_device_name",
-	               "ha_unique_id","ha_current_temperature_topic","serial_emulation"]
+	               "ha_unique_id","ha_current_temperature_topic","serial_emulation","beep"]
 
 	def init()
 		#defaults used on first boot, before anything has been saved to flash
@@ -46,6 +46,7 @@ class BerrytonConfig
 		self.ha_unique_id = "berryton_newclim"
 		self.ha_current_temperature_topic = self.external_temp_topic
 		self.serial_emulation = 0                         #1=fake AC feedback frames for bench testing (no real unit)
+		self.beep = 1                                     #1=AC beeps on each command (default), 0=silent (byte 16 = 0x01)
 		self.load()
 	end
 
@@ -329,6 +330,7 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	var reg13 = 0x00
 	var reg14 = 0x00
 	var reg15 = 0x98 #config word
+	var reg16 = (cfg.beep == 0) ? 0x01 : 0x00 #byte 16 : 0x01 = no beep, 0x00 = beep
 	if ac_mode != "off"
 		reg12= ac_mode_values.find(ac_mode, 0x00) | 0x08
 	else
@@ -361,6 +363,7 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	frame.set(13,reg13)
 	frame.set(14,reg14)
 	frame.set(15,reg15)
+	frame.set(16,reg16) #beep control
 	#dprint("function forge_payload : filled frame= " ,frame)
 
 	#appending CRC
