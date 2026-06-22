@@ -8,41 +8,79 @@ import mqtt
 import persist
 import introspect
 import json
+import global
 
-var topic_prefix = "cmnd/Newclim/"
-var feedback_topic_prefix = "tele/Newclim/"
+# --- all tunable settings live here, persisted to flash and editable from the config page ---
+class BerrytonConfig
+	var debug, internal_thermostat, hyst, temperature_setpoint_offset
+	var topic_prefix, feedback_topic_prefix, external_temp_topic
+	var ha_discovery_enabled, ha_full_command_set, ha_device_name, ha_unique_id, ha_current_temperature_topic
+	#list of the persisted settings (stored in flash under "cfg_<name>")
+	static keys = ["debug","internal_thermostat","hyst","temperature_setpoint_offset",
+	               "topic_prefix","feedback_topic_prefix","external_temp_topic",
+	               "ha_discovery_enabled","ha_full_command_set","ha_device_name",
+	               "ha_unique_id","ha_current_temperature_topic"]
+
+	def init()
+		#defaults used on first boot, before anything has been saved to flash
+		self.debug = 1
+		self.internal_thermostat = 1
+		self.hyst = 0.3
+		self.temperature_setpoint_offset = 8
+		self.topic_prefix = "cmnd/Newclim/"
+		self.feedback_topic_prefix = "tele/Newclim/"
+		self.external_temp_topic = "nodered/temp-salon"
+		self.ha_discovery_enabled = 1
+		self.ha_full_command_set = 0
+		self.ha_device_name = "Airton"
+		self.ha_unique_id = "berryton_newclim"
+		self.ha_current_temperature_topic = self.external_temp_topic
+		self.load()
+	end
+
+	#load each setting from flash, keeping the default when nothing has been saved yet
+	def load()
+		for k : self.keys
+			var v = introspect.get(persist, "cfg_" + k)
+			if v != nil
+				introspect.set(self, k, v)
+			end
+		end
+	end
+
+	#persist every setting to flash
+	def save()
+		for k : self.keys
+			introspect.set(persist, "cfg_" + k, introspect.get(self, k))
+		end
+		persist.save()
+	end
+end
+
+global.berryton_cfg = BerrytonConfig()
+var cfg = global.berryton_cfg
+
+#runtime state (not user settings ; the tunable settings live in the BerrytonConfig object 'cfg' below)
 var fan_speed_setpoint
 var oscillation_mode_setpoint
 var temperature_setpoint
 var ac_mode
-var external_temp_topic = "nodered/temp-salon"
-var internal_thermostat = 1 							#1=enables the hysteresis logic in the code 0 to let the AC unit drive its regulation + adding temperature_setpoint_offset
-var hyst = 0.3 										#hysteresis (in °C) used by the internal thermostat (internal_thermostat=1)
-var debug = 1 										#1=print debug messages on the console, 0=stay silent
 var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
 
-# --- Home Assistant MQTT autodiscovery settings (will be editable from the config page) ---
-var ha_discovery_enabled = 1 						#1=publish the HA autodiscovery config on connect, 0=don't
-var ha_full_command_set = 0 						#0=simplified fan/swing menus, 1=full set (incl. stepless and sweep modes)
-var ha_device_name = "Airton" 						#device/entity name shown in HA
-var ha_unique_id = "berryton_newclim" 				#unique id / discovery object id
-var ha_current_temperature_topic = external_temp_topic 	#room temperature source reported to HA
-
 # --- vocabulary of the regulation variables ---
-# internal_thermostat            : 1 = the ESP regulates (hysteresis) ; 0 = the AC regulates on its own sensor (offset)
+# cfg.internal_thermostat        : 1 = the ESP regulates (hysteresis) ; 0 = the AC regulates on its own sensor (offset)
 # temperature_setpoint           : the real setpoint, what the user/HA asks for (and what we report back to HA)
 # temperature_setpoint_to_ac_unit: the value actually pushed to the AC in hysteresis mode ; forced to 17 or 31°C
-#                                  to make the unit run flat out or pause (only meaningful when internal_thermostat == 1)
-# temperature_setpoint_offset    : in offset mode, added to the setpoint so the AC's higher/enclosed sensor still
+#                                  to make the unit run flat out or pause (only meaningful when cfg.internal_thermostat == 1)
+# cfg.temperature_setpoint_offset: in offset mode, added to the setpoint so the AC's higher/enclosed sensor still
 #                                  regulates the room correctly ; subtracted again before reporting back to HA
-var temperature_setpoint_offset = 8
 # serial communications (pin 26 TX , PIN 32 RX)
 ser = serial(32, 26, 9600, serial.SERIAL_8N1)
 
 #debug print helper : prints only when debug is enabled, so there is no need for an "if debug" around every call
 def dprint(*args)
-	if !debug return end
+	if !cfg.debug return end
 	var line = ""
 	for a : args
 		line += str(a)
@@ -62,13 +100,13 @@ def thermostat(setpoint,actual_temp)
 		delta = 0.0
 	end
 	dprint("function thermostat : setpoint=", setpoint , " delta=", delta," last_thermostat_state=",last_thermostat_state)
-	if (delta > hyst ) && last_thermostat_state!= 0
+	if (delta > cfg.hyst ) && last_thermostat_state!= 0
 		dprint("function thermostat : delta > hyst")
 		last_thermostat_state = 0
 		dprint("function thermostat : last_thermostat_state=",last_thermostat_state)
 		return 0
 
-	elif (delta < -hyst ) && last_thermostat_state!= 1
+	elif (delta < -cfg.hyst ) && last_thermostat_state!= 1
 		dprint("function thermostat  : delta < -hyst ")
 		last_thermostat_state = 1
 		dprint("function thermostat : last_thermostat_state=",last_thermostat_state)
@@ -183,7 +221,7 @@ end
 #retrieve the AC setpoint temperature
 def get_temperature_setpoint(payload)
 	#dprint("byte 14 , setpoint temperature: " ,payload.getbits(115,1),payload.getbits(114,1), payload.getbits(113,1), payload.getbits(112,1) ) #debug
-	if internal_thermostat == 0
+	if cfg.internal_thermostat == 0
 		temperature_setpoint = payload.getbits(112,4) +16
 		store_if_different(temperature_setpoint,"TempSetpoint")
 		dprint("function get_temperature_setpoint : temperature_setpoint retrieved on payload from ACunit : ", temperature_setpoint)
@@ -203,8 +241,8 @@ def publish_feedback(payload)
 
 	# sending back the temperature setpoint value minus the offset for the regulation to happen correctly
 	var my_temperature = str(get_internal_temperature(payload) )
-	if internal_thermostat == 0
-		temperature_setpoint = get_temperature_setpoint(payload) - temperature_setpoint_offset
+	if cfg.internal_thermostat == 0
+		temperature_setpoint = get_temperature_setpoint(payload) - cfg.temperature_setpoint_offset
 	else
 		temperature_setpoint = get_temperature_setpoint(payload)
 	end
@@ -216,15 +254,15 @@ def publish_feedback(payload)
 
 
 	dprint("function publish_feedback : got all needed value, publishing in mqtt topics")
-	mqtt.publish(feedback_topic_prefix + "mode/get" , my_ac_mode)
+	mqtt.publish(cfg.feedback_topic_prefix + "mode/get" , my_ac_mode)
 	#dprint("function publish_feedback : published FanSpeedFeedback")
-	mqtt.publish(feedback_topic_prefix + "fan/get" , my_fan_speed)
+	mqtt.publish(cfg.feedback_topic_prefix + "fan/get" , my_fan_speed)
 	#dprint("function publish_feedback : published FanSpeedFeedback")
-	mqtt.publish(feedback_topic_prefix + "swing/get" , my_oscillation_mode)
+	mqtt.publish(cfg.feedback_topic_prefix + "swing/get" , my_oscillation_mode)
 	#dprint("function publish_feedback : published OscillationModeFeedback")
-	mqtt.publish(feedback_topic_prefix + "Actualtemp/get" , my_temperature)
+	mqtt.publish(cfg.feedback_topic_prefix + "Actualtemp/get" , my_temperature)
 	#dprint("function publish_feedback : published TemperatureFeedback")
-	mqtt.publish(feedback_topic_prefix + "Actualsetpoint/get" , str(temperature_setpoint))
+	mqtt.publish(cfg.feedback_topic_prefix + "Actualsetpoint/get" , str(temperature_setpoint))
 	#dprint("function publish_feedback : published Temperature_setpointFeedback")
 
 end
@@ -325,46 +363,46 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 		return
 	end
 	#we send back gratuitous feedback upon reception to ensure homeassistant gets immediate feedback and sets correctly its values (why doesnt Homeassistant have time setting for the feedback ? )
-	if topic == (topic_prefix + "mode/set")
+	if topic == (cfg.topic_prefix + "mode/set")
 		ac_mode = payload_s
 		dprint("function mqtt_subscribe_dispatcher : received ac_mode = ", ac_mode)
-		mqtt.publish(feedback_topic_prefix + "mode/get" , ac_mode)
+		mqtt.publish(cfg.feedback_topic_prefix + "mode/get" , ac_mode)
 		dprint("function mqtt_subscribe_dispatcher : publishing immediately ac_mode")
 
-	elif topic == (topic_prefix + "fan/set")
+	elif topic == (cfg.topic_prefix + "fan/set")
 		fan_speed_setpoint = payload_s
 		dprint("function mqtt_subscribe_dispatcher : received fan_speed_setpoint = ", fan_speed_setpoint)
-		mqtt.publish(feedback_topic_prefix + "fan/get" , fan_speed_setpoint)
+		mqtt.publish(cfg.feedback_topic_prefix + "fan/get" , fan_speed_setpoint)
 		dprint("function mqtt_subscribe_dispatcher : publishing immediately fan_speed_setpoint")
 
-	elif topic == (topic_prefix + "swing/set")
+	elif topic == (cfg.topic_prefix + "swing/set")
 		oscillation_mode_setpoint = payload_s
 		dprint("function mqtt_subscribe_dispatcher : received oscillation_mode_setpoint = ", oscillation_mode_setpoint)
-		mqtt.publish(feedback_topic_prefix + "swing/get" , oscillation_mode_setpoint)
+		mqtt.publish(cfg.feedback_topic_prefix + "swing/get" , oscillation_mode_setpoint)
 		dprint("function mqtt_subscribe_dispatcher : publishing immediately oscillation_mode_setpoint")
 
-	elif topic == (topic_prefix + "temperature/set")
+	elif topic == (cfg.topic_prefix + "temperature/set")
 		#some offset trials , the feedback is the temperature without the offset
 		dprint("function mqtt_subscribe_dispatcher : received temperature_setpoint = ", number(payload_s))
 
-		if ac_mode == "heat" && internal_thermostat == 0
-			temperature_setpoint = number(payload_s) + temperature_setpoint_offset
-			dprint("function mqtt_subscribe_dispatcher : heating mode, applying positive offset of :" , temperature_setpoint_offset , "°C")
+		if ac_mode == "heat" && cfg.internal_thermostat == 0
+			temperature_setpoint = number(payload_s) + cfg.temperature_setpoint_offset
+			dprint("function mqtt_subscribe_dispatcher : heating mode, applying positive offset of :" , cfg.temperature_setpoint_offset , "°C")
 
-		elif internal_thermostat == 1
+		elif cfg.internal_thermostat == 1
 			temperature_setpoint = number(payload_s)
 			dprint("function mqtt_subscribe_dispatcher : internal_thermostat enabled in : ", ac_mode, " mode : saving the setpoint: ",temperature_setpoint , " to persistance file if different then previously")
 
 
-		elif ac_mode == "cool" && internal_thermostat == 0
-			temperature_setpoint = number(payload_s) - temperature_setpoint_offset
-			dprint("function mqtt_subscribe_dispatcher : cooling mode, applying negative offset of :" , temperature_setpoint_offset , "°C")
+		elif ac_mode == "cool" && cfg.internal_thermostat == 0
+			temperature_setpoint = number(payload_s) - cfg.temperature_setpoint_offset
+			dprint("function mqtt_subscribe_dispatcher : cooling mode, applying negative offset of :" , cfg.temperature_setpoint_offset , "°C")
 
 
 		end
 		store_if_different(temperature_setpoint,"TempSetpoint")
 		dprint("function mqtt_subscribe_dispatcher : publishing immediately temperature_setpoint")
-		mqtt.publish(feedback_topic_prefix + "Actualsetpoint/get" , payload_s)
+		mqtt.publish(cfg.feedback_topic_prefix + "Actualsetpoint/get" , payload_s)
 
 
 		#on external temperature reception, we trigger the thermostat, we dont
@@ -373,7 +411,7 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 		# a higher temperature setpoint (31°c) while in cool mode
 		#to force the AC unit
 		#to pause with louvre open
-	elif topic == external_temp_topic && internal_thermostat == 1
+	elif topic == cfg.external_temp_topic && cfg.internal_thermostat == 1
 		dprint("function mqtt_subscribe_dispatcher : received a temperature value from external thermometer : ", number(payload_s) )
 		external_temp_value = number(payload_s)
 	end
@@ -382,7 +420,7 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 	# useless flash write, and the thermostat never runs for nothing.
 	# thermostat_state stays nil in offset mode (the send block below short-circuits on it).
 	var thermostat_state
-	if internal_thermostat == 1
+	if cfg.internal_thermostat == 1
 		#sanitize external_temp_value input (skip zero sometimes given by zigbee2mqtt and extremes temps)
 		if external_temp_value < 1 || external_temp_value > 45
 			# invalid reading : skip the regulation but keep going, so a user command is still sent
@@ -413,10 +451,10 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 	end
 
 	# in thermostat mode we send back the external setpoint #
-	if(internal_thermostat == 1 &&  topic != external_temp_topic) || (internal_thermostat == 1 && thermostat_state != nil)
+	if(cfg.internal_thermostat == 1 &&  topic != cfg.external_temp_topic) || (cfg.internal_thermostat == 1 && thermostat_state != nil)
 		dprint("function mqtt_subscribe_dispatcher : forging payload for internal thermostat mode")
 		frame_to_send = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, temperature_setpoint_to_ac_unit)
-	elif(internal_thermostat == 0)
+	elif(cfg.internal_thermostat == 0)
 		dprint("function mqtt_subscribe_dispatcher : forging payload for AC unit thermostat + offset mode")
 		frame_to_send = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, int(temperature_setpoint))
 	end
@@ -455,17 +493,17 @@ end
 #publish the Home Assistant MQTT climate autodiscovery config (retained) so HA creates the
 #entity by itself. Topics mirror exactly what the script already listens to / publishes.
 def publish_ha_discovery()
-	if !ha_discovery_enabled return end
+	if !cfg.ha_discovery_enabled return end
 	#simplified menus by default ; the full set adds stepless + the sweep oscillation modes
 	var fan_modes = ["auto","low","low-medium","medium","medium-high","high","turbo"]
 	var swing_modes = ["off","on","high","medium-high","medium","medium-low","low"]
-	if ha_full_command_set == 1
+	if cfg.ha_full_command_set == 1
 		fan_modes = ["auto","low","low-medium","medium","medium-high","high","stepless","turbo"]
 		swing_modes = ["off","on","high","medium-high","medium","medium-low","low","sweep 1-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6","sweep 3-5"]
 	end
-	var cfg = {
-		"name": ha_device_name,
-		"unique_id": ha_unique_id,
+	var disco = {
+		"name": cfg.ha_device_name,
+		"unique_id": cfg.ha_unique_id,
 		"modes": ["off","auto","cool","heat","dry","fan_only"],
 		"fan_modes": fan_modes,
 		"swing_modes": swing_modes,
@@ -473,36 +511,36 @@ def publish_ha_discovery()
 		"max_temp": 31,
 		"temp_step": 1,
 		"precision": 0.1,
-		"mode_command_topic": topic_prefix + "mode/set",
-		"mode_state_topic": feedback_topic_prefix + "mode/get",
-		"fan_mode_command_topic": topic_prefix + "fan/set",
-		"fan_mode_state_topic": feedback_topic_prefix + "fan/get",
-		"swing_mode_command_topic": topic_prefix + "swing/set",
-		"swing_mode_state_topic": feedback_topic_prefix + "swing/get",
-		"temperature_command_topic": topic_prefix + "temperature/set",
-		"temperature_state_topic": feedback_topic_prefix + "Actualsetpoint/get",
-		"current_temperature_topic": ha_current_temperature_topic,
+		"mode_command_topic": cfg.topic_prefix + "mode/set",
+		"mode_state_topic": cfg.feedback_topic_prefix + "mode/get",
+		"fan_mode_command_topic": cfg.topic_prefix + "fan/set",
+		"fan_mode_state_topic": cfg.feedback_topic_prefix + "fan/get",
+		"swing_mode_command_topic": cfg.topic_prefix + "swing/set",
+		"swing_mode_state_topic": cfg.feedback_topic_prefix + "swing/get",
+		"temperature_command_topic": cfg.topic_prefix + "temperature/set",
+		"temperature_state_topic": cfg.feedback_topic_prefix + "Actualsetpoint/get",
+		"current_temperature_topic": cfg.ha_current_temperature_topic,
 		"device": {
-			"identifiers": [ha_unique_id],
-			"name": ha_device_name,
+			"identifiers": [cfg.ha_unique_id],
+			"name": cfg.ha_device_name,
 			"manufacturer": "Airton",
 			"model": "TCL clone (Berryton)"
 		}
 	}
-	var config_topic = "homeassistant/climate/" + ha_unique_id + "/config"
-	mqtt.publish(config_topic, json.dump(cfg), true)        #retain = true so HA picks it up anytime
+	var config_topic = "homeassistant/climate/" + cfg.ha_unique_id + "/config"
+	mqtt.publish(config_topic, json.dump(disco), true)        #retain = true so HA picks it up anytime
 	dprint("function publish_ha_discovery : published HA autodiscovery to ", config_topic)
 end
 
 ######### main program ########
 
-dprint("starting program : mqtt topics", topic_prefix , feedback_topic_prefix )
-mqtt.subscribe(topic_prefix + "mode/set",mqtt_subscribe_dispatcher)
-mqtt.subscribe(topic_prefix + "fan/set",mqtt_subscribe_dispatcher)
-mqtt.subscribe(topic_prefix + "swing/set",mqtt_subscribe_dispatcher)
-mqtt.subscribe(topic_prefix + "temperature/set",mqtt_subscribe_dispatcher)
+dprint("starting program : mqtt topics", cfg.topic_prefix , cfg.feedback_topic_prefix )
+mqtt.subscribe(cfg.topic_prefix + "mode/set",mqtt_subscribe_dispatcher)
+mqtt.subscribe(cfg.topic_prefix + "fan/set",mqtt_subscribe_dispatcher)
+mqtt.subscribe(cfg.topic_prefix + "swing/set",mqtt_subscribe_dispatcher)
+mqtt.subscribe(cfg.topic_prefix + "temperature/set",mqtt_subscribe_dispatcher)
 mqtt.subscribe("testsclim/payloadfromclim",mqtt_subscribe_dispatcher)
-mqtt.subscribe(external_temp_topic,mqtt_subscribe_dispatcher)
+mqtt.subscribe(cfg.external_temp_topic,mqtt_subscribe_dispatcher)
 
 #check if any temperature setpoint has been saved to flash
 if persist.member("TempSetpoint") != nil
