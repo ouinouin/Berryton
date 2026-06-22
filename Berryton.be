@@ -125,7 +125,10 @@ def get_ac_mode(payload) # available modes are : "auto","cool","dry","fan_only",
 	#dprint("byte 13 : 0x" ,string.hex(payload[13]), " ac_mode 3 bits value :", payload.getbits(106,1), payload.getbits(105,1), payload.getbits(104,1), " AC unit on/off state :", payload.getbits(107,1) ) #debug
 	ac_on_off_state = payload.getbits(107,1)
 	if ac_on_off_state == 1
-		ac_mode_string = ac_mode_list[payload.getbits(104,3)]
+		var mode_idx = payload.getbits(104,3)          #3 bits give 0..7 but the list has only 6 entries
+		if mode_idx < ac_mode_list.size()
+			ac_mode_string = ac_mode_list[mode_idx]
+		end                                            #out of range : keep the "auto" default
 	else
 		ac_mode_string = ac_mode_list[5]
 	end
@@ -152,7 +155,11 @@ end
 def get_oscillation_mode(payload)
 	var oscillation_mode_list = ["off", "on" ,"high","medium-high","medium","medium-low","low","sweep 1-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6","sweep 3-5"]
 	#dprint("function get_oscillation_mode : byte 15 : 0x" ,string.hex(payload[15]), " Oscillation mode up/down 4 bits value :",payload.getbits(123,1), payload.getbits(122,1), payload.getbits(121,1), payload.getbits(120,1)) #debug
-	var oscillation_mode_string = oscillation_mode_list[payload.getbits(120,4)]
+	var osc_idx = payload.getbits(120,4)               #4 bits give 0..15 but the list has only 14 entries
+	var oscillation_mode_string = "off"                #default if the value exceeds the list
+	if osc_idx < oscillation_mode_list.size()
+		oscillation_mode_string = oscillation_mode_list[osc_idx]
+	end
 	dprint("function get_oscillation_mode : oscillation_mode_string = ", oscillation_mode_string)
 	return oscillation_mode_string
 end
@@ -468,7 +475,13 @@ else
 end
 
 def loop_me()
-	get_from_serial()
+	# wrap in try/except so an unexpected exception never breaks the polling chain :
+	# the timer is always rescheduled, otherwise serial polling would stop until reboot
+	try
+		get_from_serial()
+	except .. as e, m
+		dprint("function loop_me : exception caught in get_from_serial : ", e, " ", m)
+	end
 	tasmota.set_timer(200, loop_me, 1)
 end
 loop_me()
