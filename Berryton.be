@@ -241,9 +241,9 @@ def forgepayload(Acmode,FanSpeed,OscillationMode,TemperatureSP)
 	var Reg15 = 0x98 #config word
 	if Acmode != "off"
 		Reg12= ACmodeValues[Acmode] | 0x08
-	elif Acmode == "off"
+	else
 		Reg12=  0x00
-	end	
+	end
 	
 	#setting FanSpeed on register 12 of the frame
 	if Acmode != "turbo"
