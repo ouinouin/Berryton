@@ -13,11 +13,16 @@ import global
 # --- all tunable settings live here, persisted to flash and editable from the config page ---
 class BerrytonConfig
 	var debug, internal_thermostat, hyst, temperature_setpoint_offset
-	var topic_prefix, feedback_topic_prefix, external_temp_topic
+	var topic_prefix, feedback_topic_prefix
+	#external temperature source (used by the hysteresis thermostat) : MQTT topic and/or HTTP GET polling
+	var external_temp_mqtt_enabled, external_temp_topic
+	var external_temp_http_enabled, external_temp_http_url, external_temp_http_interval
 	var ha_discovery_enabled, ha_full_command_set, ha_device_name, ha_unique_id, ha_current_temperature_topic
 	#list of the persisted settings (stored in flash under "cfg_<name>")
 	static keys = ["debug","internal_thermostat","hyst","temperature_setpoint_offset",
-	               "topic_prefix","feedback_topic_prefix","external_temp_topic",
+	               "topic_prefix","feedback_topic_prefix",
+	               "external_temp_mqtt_enabled","external_temp_topic",
+	               "external_temp_http_enabled","external_temp_http_url","external_temp_http_interval",
 	               "ha_discovery_enabled","ha_full_command_set","ha_device_name",
 	               "ha_unique_id","ha_current_temperature_topic"]
 
@@ -29,7 +34,11 @@ class BerrytonConfig
 		self.temperature_setpoint_offset = 8
 		self.topic_prefix = "cmnd/Newclim/"
 		self.feedback_topic_prefix = "tele/Newclim/"
+		self.external_temp_mqtt_enabled = 1                #subscribe to an MQTT topic for the room temperature
 		self.external_temp_topic = "nodered/temp-salon"
+		self.external_temp_http_enabled = 0               #poll an HTTP url for the room temperature
+		self.external_temp_http_url = ""                  #e.g. http://192.168.0.10/temp (body should contain a number)
+		self.external_temp_http_interval = 60             #seconds between HTTP polls
 		self.ha_discovery_enabled = 1
 		self.ha_full_command_set = 0
 		self.ha_device_name = "Airton"
@@ -532,6 +541,54 @@ def publish_ha_discovery()
 	dprint("function publish_ha_discovery : published HA autodiscovery to ", config_topic)
 end
 
+#extract the first number found in a string (handles "21.5", "21.4 C", or a simple JSON like {"t":-3.5})
+#note : on a multi-field JSON it returns the FIRST number, so point the URL at a temperature-only endpoint
+def extract_number(s)
+	var out = ""
+	var i = 0
+	var started = false
+	while i < size(s)
+		var c = s[i]
+		if (c >= "0" && c <= "9") || c == "." || (c == "-" && !started)
+			out += c
+			started = true
+		elif started
+			break
+		end
+		i += 1
+	end
+	return size(out) > 0 ? number(out) : nil
+end
+
+#poll an HTTP url for the room temperature, then feed it to the thermostat like an MQTT reading.
+#reschedules itself every cfg.external_temp_http_interval seconds while enabled.
+def poll_http_temp()
+	if cfg.external_temp_http_enabled != 1 return end          #stop rescheduling if disabled
+	if size(cfg.external_temp_http_url) > 0
+		try
+			var w = webclient()
+			w.begin(cfg.external_temp_http_url)
+			var code = w.GET()
+			if code == 200
+				var t = extract_number(w.get_string())
+				if t != nil
+					dprint("function poll_http_temp : got ", t, "°C from ", cfg.external_temp_http_url)
+					#reuse the dispatcher's external-temperature path (sets external_temp_value + runs thermostat)
+					mqtt_subscribe_dispatcher(cfg.external_temp_topic, 0, str(t), nil)
+				else
+					dprint("function poll_http_temp : no number found in HTTP body")
+				end
+			else
+				dprint("function poll_http_temp : HTTP GET returned code ", code)
+			end
+			w.close()
+		except .. as e, m
+			dprint("function poll_http_temp : exception ", e, " ", m)
+		end
+	end
+	tasmota.set_timer(cfg.external_temp_http_interval * 1000, poll_http_temp, 2)
+end
+
 ######### main program ########
 
 dprint("starting program : mqtt topics", cfg.topic_prefix , cfg.feedback_topic_prefix )
@@ -540,7 +597,11 @@ mqtt.subscribe(cfg.topic_prefix + "fan/set",mqtt_subscribe_dispatcher)
 mqtt.subscribe(cfg.topic_prefix + "swing/set",mqtt_subscribe_dispatcher)
 mqtt.subscribe(cfg.topic_prefix + "temperature/set",mqtt_subscribe_dispatcher)
 mqtt.subscribe("testsclim/payloadfromclim",mqtt_subscribe_dispatcher)
-mqtt.subscribe(cfg.external_temp_topic,mqtt_subscribe_dispatcher)
+#external temperature : subscribe to the MQTT source only when enabled
+if cfg.external_temp_mqtt_enabled == 1
+	mqtt.subscribe(cfg.external_temp_topic,mqtt_subscribe_dispatcher)
+	dprint("external temp : MQTT source enabled on topic ", cfg.external_temp_topic)
+end
 
 #check if any temperature setpoint has been saved to flash
 if persist.member("TempSetpoint") != nil
@@ -564,6 +625,12 @@ end
 #publish HA autodiscovery on every MQTT (re)connection, plus once now in case we are already connected
 tasmota.add_rule("Mqtt#Connected", publish_ha_discovery)
 publish_ha_discovery()
+
+#start the HTTP temperature poller if that source is enabled
+if cfg.external_temp_http_enabled == 1
+	dprint("external temp : HTTP source enabled, polling ", cfg.external_temp_http_url, " every ", cfg.external_temp_http_interval, "s")
+	poll_http_temp()
+end
 
 def loop_me()
 	# wrap in try/except so an unexpected exception never breaks the polling chain :
