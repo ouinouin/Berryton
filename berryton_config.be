@@ -101,9 +101,10 @@ class BerrytonConfigPage
 		if saved
 			webserver.content_send("<p style='color:green'><b>Settings saved.</b> Topic/source changes apply after a Berry restart.</p>")
 		end
-		#width:96vw is viewport-relative so it overrides Tasmota's content wrapper, which is
-		#display:inline-block and would otherwise grow to the widest line (long hint text)
-		webserver.content_send("<div style='width:96vw;max-width:460px;margin:0 auto;text-align:left;overflow-wrap:break-word'>")
+		#match Tasmota's standard content width (its wrapper is display:inline-block;min-width:340px):
+		#fixing our box to 340px keeps the page the same width as every other config page and makes
+		#the long hint text wrap instead of growing the inline-block wrapper
+		webserver.content_send("<div style='width:340px;max-width:100%;text-align:left;overflow-wrap:break-word'>")
 		webserver.content_send("<form action='berryton' method='get'>")
 		for f : BCFG_FIELDS
 			self.render_field(f, cfg)
