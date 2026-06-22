@@ -271,7 +271,6 @@ def forgepayload(Acmode,FanSpeed,OscillationMode,TemperatureSP)
 	#print("function forgepayload : filled frame= " ,frame)
 	
 	#appending CRC
-	modcrc16(frame)
 	#print("function forgepayload : ", modcrc16(frame))
 	frame.add(modcrc16(frame),-2)
 	#print("function forgepayload : filled frame with crc = " ,frame)
