@@ -136,7 +136,7 @@ def GetOscillationMode(payload)
 	var OscillationModeList = ["off", "on" ,"high","medium-high","medium","medium-low","low","sweep 3-5","sweep 3-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6"]
 	#print("function GetOscillationMode : byte 15 : 0x" ,string.hex(payload[15]), " Oscillation mode up/down 4 bits value :",payload.getbits(123,1), payload.getbits(122,1), payload.getbits(121,1), payload.getbits(120,1)) #debug
 	var OscillationModeString = OscillationModeList[payload.getbits(120,4)]
-	print ("function GetOscillationMode : OscillationModeString = ", OscillationModeString)
+	print("function GetOscillationMode : OscillationModeString = ", OscillationModeString)
 	return OscillationModeString
 end
 
