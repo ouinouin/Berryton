@@ -11,7 +11,7 @@ import introspect
 
 var topicprefix = "cmnd/Newclim/"
 var FeedbackTopicPrefix = "tele/Newclim/"
-var FanSpeedSetpoint 
+var FanSpeedSetpoint
 var OscillationModeSetpoint
 var TemperatureSetpoint
 var ACmode
@@ -40,7 +40,7 @@ end
 #an internal simple thermostat  returns 0 while the unit should stop and 1 while it should start
 var last_thermostat_state
 def thermostat(Setpoint,ActualTemp)
-    var delta
+	var delta
 	if ACmode == "heat"
 		delta = ActualTemp - Setpoint
 	elif ACmode == "cool"
@@ -69,25 +69,25 @@ def StoreIfDifferent(ValueToCompare,StoragePlace)
 	if number(introspect.get(persist, StoragePlace)) == ValueToCompare
 		dprint("function StoreIfDifferent : nothing to store")
 		return
-	else 
+	else
 		introspect.set(persist, StoragePlace,ValueToCompare)
 		dprint("function StoreIfDifferent : storing the value :",ValueToCompare, "to persist.",StoragePlace)
 	end
 end
 
 #modbus CRC16
-def modcrc16(data, poly)	
+def modcrc16(data, poly)
 	if !poly  poly = 0xA001 end
-		# CRC-16 MODBUS HASHING ALGORITHM
-		var crc = 0xFFFF
-		for i:0..size(data)-1
-			crc = crc ^ data[i]
-				for j:0..7
-					if crc & 1
-						crc = (crc >> 1) ^ poly
-					else
-						crc = crc >> 1
-				end
+	# CRC-16 MODBUS HASHING ALGORITHM
+	var crc = 0xFFFF
+	for i:0..size(data)-1
+		crc = crc ^ data[i]
+		for j:0..7
+			if crc & 1
+				crc = (crc >> 1) ^ poly
+			else
+				crc = crc >> 1
+			end
 		end
 	end
 	return crc
@@ -95,15 +95,15 @@ end
 
 #checking messages incoming from AC unit CRCet
 def CheckMessage(payload)
-   #dprint(payload.size()) #debug
-   var MsgCalCrc = modcrc16(payload[0..payload.size()-3])
-   var MsgCrc = payload.get(payload.size()-2,-2) # last -2 param means endianness swap
-   #dprint("calculated message = " , MsgCalCrc , "crc of payload = ", MsgCrc) #debug
-   if MsgCalCrc == MsgCrc
-	 return 1
-   else
-	 return 0
-   end
+	#dprint(payload.size()) #debug
+	var MsgCalCrc = modcrc16(payload[0..payload.size()-3])
+	var MsgCrc = payload.get(payload.size()-2,-2) # last -2 param means endianness swap
+	#dprint("calculated message = " , MsgCalCrc , "crc of payload = ", MsgCrc) #debug
+	if MsgCalCrc == MsgCrc
+		return 1
+	else
+		return 0
+	end
 end
 
 
@@ -111,17 +111,17 @@ end
 
 
 
-#retrieve the AC unit mode from the AC unit frame	
+#retrieve the AC unit mode from the AC unit frame
 def GetACmode(payload) # available modes are : "auto","cool","dry","fan_only","heat"
 	var ACmodelist = ["auto","cool","dry","fan_only","heat","off",]
 	var ACmodeString = "auto"
 	var AConOffState = 0
 	#dprint("byte 13 : 0x" ,string.hex(payload[13]), " ACmode 3 bits value :", payload.getbits(106,1), payload.getbits(105,1), payload.getbits(104,1), " AC unit on/off state :", payload.getbits(107,1) ) #debug
 	AConOffState = payload.getbits(107,1)
-	if AConOffState == 1 
-	ACmodeString = ACmodelist[payload.getbits(104,3)]
+	if AConOffState == 1
+		ACmodeString = ACmodelist[payload.getbits(104,3)]
 	else
-	ACmodeString = ACmodelist[5]    
+		ACmodeString = ACmodelist[5]
 	end
 	dprint("function GetACmode :  ACmodeString = " , ACmodeString ) #debug
 	return ACmodeString
@@ -134,9 +134,9 @@ def GetFanSpeed(payload)
 	var FanModeList = ["auto","low","low-medium","medium","medium-high","high","stepless","turbo"]
 	#dprint("byte 13 : 0x" ,string.hex(payload[13]), " FanSpeedMode 3 bits value :", payload.getbits(110,1), payload.getbits(109,1), payload.getbits(108,1), " mode turbo :", payload.getbits(111,1) ) #debug
 	if TurboModeState == 0
-	FanModeString = FanModeList[payload.getbits(108,3)]
+		FanModeString = FanModeList[payload.getbits(108,3)]
 	else
-	FanModeString = FanModeList[7]
+		FanModeString = FanModeList[7]
 	end
 	dprint( "function GetFanSpeed : FanModeString = " , FanModeString)
 	return FanModeString
@@ -167,34 +167,34 @@ def GetTemperatureSetpoint(payload)
 		TemperatureSetpoint = payload.getbits(112,4) +16
 		StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
 		dprint("function GetTemperatureSetpoint : TemperatureSetpoint retrieved on payload from ACunit : ", TemperatureSetpoint)
-	# will directly return the setpoint received by mqtt
-	#there is a catch here , this function has to be reworked in order to ensure a good sync while using infrared remote
+		# will directly return the setpoint received by mqtt
+		#there is a catch here , this function has to be reworked in order to ensure a good sync while using infrared remote
 	else
 		TemperatureSetpoint = number(persist.TempSetpoint)
 		dprint("function GetTemperatureSetpoint : TemperatureSetpoint retrieved from persistent memory : ", TemperatureSetpoint)
 	end
 	return TemperatureSetpoint
 end
-	
+
 def PublishFeedback(payload)
 	var MyACmode = GetACmode(payload)
 	var MyFanSpeed = GetFanSpeed(payload)
 	var MyOscillationMode = GetOscillationMode(payload)
-	
+
 	# sending back the temperature setpoint value minus the offset for the regulation to happen correctly
 	var MyTemperature = str(GetInternalTemperature(payload) )
 	if internalThermostat == 0
-	  TemperatureSetpoint = GetTemperatureSetpoint(payload) - TemperatureSetpointOffset
-	else 
-	  TemperatureSetpoint = GetTemperatureSetpoint(payload)
+		TemperatureSetpoint = GetTemperatureSetpoint(payload) - TemperatureSetpointOffset
+	else
+		TemperatureSetpoint = GetTemperatureSetpoint(payload)
 	end
 	#initialize settings value with first feedback from AC unit to manage restart conditions
 	if FanSpeedSetpoint == nil FanSpeedSetpoint = MyFanSpeed  dprint("recovered FanSpeedSetpoint : " , FanSpeedSetpoint) end
 	if OscillationModeSetpoint == nil OscillationModeSetpoint = MyOscillationMode dprint("recovered OscillationModeSetpoint : ", OscillationModeSetpoint) end
 	if TemperatureSetpoint == nil dprint("no TemperatureSetpoint available, check persistance file value :", TemperatureSetpoint) end
 	if ACmode == nil ACmode = MyACmode dprint("recovered ACmode : ", ACmode) end
-	
-	
+
+
 	dprint("function PublishFeedback : got all needed value, publishing in mqtt topics")
 	mqtt.publish(FeedbackTopicPrefix + "mode/get" , MyACmode)
 	#dprint("function PublishFeedback : published FanSpeedFeedback")
@@ -206,38 +206,38 @@ def PublishFeedback(payload)
 	#dprint("function PublishFeedback : published TemperatureFeedback")
 	mqtt.publish(FeedbackTopicPrefix + "Actualsetpoint/get" , str(TemperatureSetpoint))
 	#dprint("function PublishFeedback : published Temperature_setpointFeedback")
-	
+
 end
-	
+
 def GetFrametype(payload)
 	var FrameTypeString = "NONE" #frame A3 = feedback from AC unit to wifi module
 	if CheckMessage(payload) == 1
 		#dprint("function GetFrametype : frame CRC seems valid")
 		if payload.size() == 34
 			#dprint("function GetFrametype : seeking frame type on byte 7 : 0x" ,string.hex(payload[7]) ) #debug
-			
+
 			if string.hex(payload[7]) == "A3"
 				#dprint("function GetFrametype : frame type is A3 : AC unit is giving back useful feedback")
 				dprint("function GetFrametype : valid message from AC unit :", payload.tostring(60))
 				FrameTypeString = "ACFeedback"
 				PublishFeedback(payload)
 				return FrameTypeString
-			else 
+			else
 				#dprint("function GetFrametype : frame is 34 bytes long but is not A3 type")
 				return "INVALID_FRAME"
-			end	
+			end
 		else
 			#dprint("function GetFrametype : frame is not 34 bytes legnth")
 		end
-		
-	else	
+
+	else
 		#dprint("function GetFrametype : CRC seems invalid, incomplete buffer ?")
 		return "BADCRC"
-	end	
-	
-end	
+	end
 
-	
+end
+
+
 def forgepayload(Acmode,FanSpeed,OscillationMode,TemperatureSP)
 	var frame = bytes("7A7A21D5180000A100000000" + "00000000" + "000000000000")
 	#dprint("function forgepayload : empty frame= " ,frame)
@@ -255,32 +255,32 @@ def forgepayload(Acmode,FanSpeed,OscillationMode,TemperatureSP)
 	else
 		Reg12=  0x00
 	end
-	
+
 	#setting FanSpeed on register 12 of the frame
 	if Acmode != "turbo"
 		Reg12 = Reg12 |	FanModeValues[FanSpeed]
 	elif Acmode == "turbo" #todo , check if its worth it to separate turbo mode
 		Reg12 = Reg12 |	FanModeValues[FanSpeed]
-	end	
-	
+	end
+
 	#setting swing mode (oscillation ouf louvres ) on register 14 of the frame
 	Reg14 = Reg14 |	OscillationModeValues[OscillationMode]
-	
+
 	#setting temperature setpoint on register 13
 	Reg13 = number(TemperatureSP) - 16
 	dprint("function forgepayload : Register 13 ,temperature setpoint :",TemperatureSP," -16 : "  , Reg13)
-				
+
 	#dprint("function forgepayload : register 12 , AC mode and fanspeed :", string.hex(Reg12))
 	#dprint("function forgepayload : register 13 , temperature setpoint :", string.hex(Reg13))
 	#dprint("function forgepayload : register 14 , OscillationMode      :", string.hex(Reg14))
 	#dprint("function forgepayload : register 15 , ConfigWord (todo)    :", string.hex(Reg15))
-	#setting all the calculated parameters into the frame		
+	#setting all the calculated parameters into the frame
 	frame.set(12,Reg12)
 	frame.set(13,Reg13)
 	frame.set(14,Reg14)
-	frame.set(15,Reg15)	
+	frame.set(15,Reg15)
 	#dprint("function forgepayload : filled frame= " ,frame)
-	
+
 	#appending CRC
 	#dprint("function forgepayload : ", modcrc16(frame))
 	frame.add(modcrc16(frame),-2)
@@ -295,31 +295,31 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	dprint("function MQTTSubscribeDispatcher : actual FanSpeedSetpoint = ", FanSpeedSetpoint)
 	dprint("function MQTTSubscribeDispatcher : actual OscillationModeSetpoint = ", OscillationModeSetpoint)
 	dprint("function MQTTSubscribeDispatcher : actual TemperatureSetpoint = ", TemperatureSetpoint)
-	# ensure we received a fisrt feedback from the AC unit 
+	# ensure we received a fisrt feedback from the AC unit
 	if ACmode == nil || FanSpeedSetpoint == nil || OscillationModeSetpoint == nil || TemperatureSetpoint == nil
 		dprint("function MQTTSubscribeDispatcher : Some of the variables are not yet received from AC unit , escaping")
-		
+
 		return
-	end 
+	end
 	#we send back gratuitous feedback upon reception to ensure homeassistant gets immediate feedback and sets correctly its values (why doesnt Homeassistant have time setting for the feedback ? )
 	if topic == (topicprefix + "mode/set")
 		ACmode = payload_s
 		dprint("function MQTTSubscribeDispatcher : received ACmode = ", ACmode)
 		mqtt.publish(FeedbackTopicPrefix + "mode/get" , ACmode)
 		dprint("function MQTTSubscribeDispatcher : publishing immediately ACmode")
-		
+
 	elif topic == (topicprefix + "fan/set")
 		FanSpeedSetpoint = payload_s
 		dprint("function MQTTSubscribeDispatcher : received FanSpeedSetpoint = ", FanSpeedSetpoint)
 		mqtt.publish(FeedbackTopicPrefix + "fan/get" , FanSpeedSetpoint)
 		dprint("function MQTTSubscribeDispatcher : publishing immediately FanSpeedSetpoint")
-		
+
 	elif topic == (topicprefix + "swing/set")
 		OscillationModeSetpoint = payload_s
 		dprint("function MQTTSubscribeDispatcher : received OscillationModeSetpoint = ", OscillationModeSetpoint)
 		mqtt.publish(FeedbackTopicPrefix + "swing/get" , OscillationModeSetpoint)
 		dprint("function MQTTSubscribeDispatcher : publishing immediately OscillationModeSetpoint")
-	
+
 	elif topic == (topicprefix + "temperature/set")
 		#some offset trials , the feedback is the temperature without the offset
 		dprint("function MQTTSubscribeDispatcher : received TemperatureSetpoint = ", number(payload_s))
@@ -327,11 +327,11 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		if ACmode == "heat" && internalThermostat == 0
 			TemperatureSetpoint = number(payload_s) + TemperatureSetpointOffset
 			dprint("function MQTTSubscribeDispatcher : heating mode, applying positive offset of :" , TemperatureSetpointOffset , "°C")
-		
+
 		elif internalThermostat == 1
 			TemperatureSetpoint = number(payload_s)
 			dprint("function MQTTSubscribeDispatcher : internal_thermostat enabled in : ", ACmode, " mode : saving the setpoint: ",TemperatureSetpoint , " to persistance file if different then previously")
-			
+
 
 		elif ACmode == "cool" && internalThermostat == 0
 			TemperatureSetpoint = number(payload_s) - TemperatureSetpointOffset
@@ -342,26 +342,26 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		StoreIfDifferent(TemperatureSetpoint,"TempSetpoint")
 		dprint("function MQTTSubscribeDispatcher : publishing immediately TemperatureSetpoint")
 		mqtt.publish(FeedbackTopicPrefix + "Actualsetpoint/get" , payload_s)
-	
-   
-	#on external temperature reception, we trigger the thermostat, we dont
-	#stop the unit but give :
-	# a  lower temperature setpoint (17°C) while in heat mode
-	# a higher temperature setpoint (31°c) while in cool mode 
-	#to force the AC unit 
-	#to pause with louvre open
-	elif topic == externaltemptopic && internalThermostat == 1 
-	dprint("function MQTTSubscribeDispatcher : received a temperature value from external thermometer : ", number(payload_s) )
-	ExternalTempValue = number(payload_s)
+
+
+		#on external temperature reception, we trigger the thermostat, we dont
+		#stop the unit but give :
+		# a  lower temperature setpoint (17°C) while in heat mode
+		# a higher temperature setpoint (31°c) while in cool mode
+		#to force the AC unit
+		#to pause with louvre open
+	elif topic == externaltemptopic && internalThermostat == 1
+		dprint("function MQTTSubscribeDispatcher : received a temperature value from external thermometer : ", number(payload_s) )
+		ExternalTempValue = number(payload_s)
 	end
 	#sanitize ExternalTempValue input (skip zero sometimes given by zigbee2mqtt and extremes temps)
 	if ExternalTempValue < 1 || ExternalTempValue > 45
-	dprint("function MQTTSubscribeDispatcher : value out of range : waiting for valid value")
-	return
+		dprint("function MQTTSubscribeDispatcher : value out of range : waiting for valid value")
+		return
 	end
-    # 08/01/2025 we now evaluate the thermostat on any payload reception
-    var thermostat_state = thermostat(TemperatureSetpoint,ExternalTempValue)
-    dprint("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
+	# 08/01/2025 we now evaluate the thermostat on any payload reception
+	var thermostat_state = thermostat(TemperatureSetpoint,ExternalTempValue)
+	dprint("function MQTTSubscribeDispatcher : thermostat_state : " ,thermostat_state)
 	if thermostat_state == nil
 		dprint("function MQTTSubscribeDispatcher : returned from thermostat function with nothing to do")
 	elif thermostat_state
@@ -379,8 +379,8 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 	end
 	StoreIfDifferent(TemperatureSetpointToACunit , "TemperatureSetpointToACunit")
 	dprint("function MQTTSubscribeDispatcher : thermostat function returned : ", thermostat_state)
-	dprint("function MQTTSubscribeDispatcher : TemperatureSetpointToACunit :",TemperatureSetpointToACunit,"°C")	
-  
+	dprint("function MQTTSubscribeDispatcher : TemperatureSetpointToACunit :",TemperatureSetpointToACunit,"°C")
+
 	# in thermostat mode we send back the external setpoint #
 	if(internalThermostat == 1 &&  topic != externaltemptopic) || (internalThermostat == 1 && thermostat_state != nil)
 		dprint("function MQTTSubscribeDispatcher : forging payload for internal thermostat mode")
@@ -390,8 +390,8 @@ def MQTTSubscribeDispatcher(topic, idx, payload_s, payload_b)
 		frametosend = forgepayload(ACmode, FanSpeedSetpoint, OscillationModeSetpoint, int(TemperatureSetpoint))
 	end
 	if frametosend != nil
-	dprint("function MQTTSubscribeDispatcher : sending frame to AC unit: ", frametosend)
-	ser.write(frametosend)
+		dprint("function MQTTSubscribeDispatcher : sending frame to AC unit: ", frametosend)
+		ser.write(frametosend)
 	end
 	return true
 end
@@ -400,13 +400,13 @@ end
 def getfromserial()
 	var avail = ser.available()
 	if avail != 0
-	    var msg = ser.read()
-	    ser.flush()
-	    if msg[0..1] == bytes("7A7A") && avail == msg.get(4,1)
+		var msg = ser.read()
+		ser.flush()
+		if msg[0..1] == bytes("7A7A") && avail == msg.get(4,1)
 			#dprint("function GetFromSerial : buffer filled with :", avail , " bytes")
 			#print ("function GetFromSerial : message length :", msg.get(4,1))
 			#dprint("function GetFromSerial : message from AC unit :", msg.tostring(60))
-		
+
 		elif msg[0..1] == bytes("7A7A") && avail > msg.get(4,1)
 			#print ("function GetFromSerial : buffer is bigger than frame, cutting frame")
 			var msg2 = msg[msg.get(4,1)..size(msg)-1]
@@ -416,8 +416,8 @@ def getfromserial()
 		end
 		#dprint("function GetFromSerial : calling GetFrametype(msg)")
 		GetFrametype(msg)
-	else 
-	#	print ("function GetFromSerial : nothing in the buffer")
+	else
+		#	print ("function GetFromSerial : nothing in the buffer")
 	end
 end
 
@@ -451,8 +451,8 @@ else
 end
 
 def loopme()
-  getfromserial()
-  tasmota.set_timer(200, loopme, 1)
+	getfromserial()
+	tasmota.set_timer(200, loopme, 1)
 end
 loopme()
 
