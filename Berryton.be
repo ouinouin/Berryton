@@ -88,7 +88,7 @@ def CheckMessage(payload)
    var MsgCalCrc = modcrc16(payload[0..payload.size()-3])
    var MsgCrc = payload.get(payload.size()-2,-2) # last -2 param means endianness swap
    #print("calculated message = " , MsgCalCrc , "crc of payload = ", MsgCrc) #debug
-   if MsgCalCrc == MsgCalCrc
+   if MsgCalCrc == MsgCrc
 	 return 1
    else
 	 return 0
