@@ -19,13 +19,15 @@ class BerrytonConfig
 	var external_temp_http_enabled, external_temp_http_url, external_temp_http_interval
 	var ha_discovery_enabled, ha_full_command_set, ha_device_name, ha_unique_id, ha_current_temperature_topic
 	var serial_emulation, beep
+	var display, ionizer, sleep, eco                  #AC config-word flags (emission byte 15)
 	#list of the persisted settings (stored in flash under "cfg_<name>")
 	static keys = ["debug","internal_thermostat","hyst","temperature_setpoint_offset",
 	               "topic_prefix","feedback_topic_prefix",
 	               "external_temp_mqtt_enabled","external_temp_topic",
 	               "external_temp_http_enabled","external_temp_http_url","external_temp_http_interval",
 	               "ha_discovery_enabled","ha_full_command_set","ha_device_name",
-	               "ha_unique_id","ha_current_temperature_topic","serial_emulation","beep"]
+	               "ha_unique_id","ha_current_temperature_topic","serial_emulation","beep",
+	               "display","ionizer","sleep","eco"]
 
 	def init()
 		#defaults used on first boot, before anything has been saved to flash
@@ -47,6 +49,11 @@ class BerrytonConfig
 		self.ha_current_temperature_topic = self.external_temp_topic
 		self.serial_emulation = 0                         #1=fake AC feedback frames for bench testing (no real unit)
 		self.beep = 1                                     #1=AC beeps on each command (default), 0=silent (byte 16 = 0x01)
+		#config-word flags (emission byte 15) ; defaults keep the historical 0x98 value
+		self.display = 1                                  #1=LCD/display on (bit 0x80)
+		self.ionizer = 0                                  #1=ionizer/health on (bit 0x40)
+		self.sleep = 0                                    #1=sleep mode (bit 0x02)
+		self.eco = 0                                      #1=eco mode (bit 0x01)
 		self.load()
 	end
 
@@ -329,8 +336,15 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	var reg12 = 0x00
 	var reg13 = 0x00
 	var reg14 = 0x00
-	var reg15 = 0x98 #config word
-	var reg16 = (cfg.beep == 0) ? 0x01 : 0x00 #byte 16 : 0x01 = no beep, 0x00 = beep
+	#config word (byte 15) : bit7 display, bit6 ionizer, bit4 aux heater, bits3-2 display mode, bit1 sleep, bit0 eco
+	#base 0x18 preserves the historical aux-heater + display-mode bits ; user flags are OR-ed in (defaults -> 0x98)
+	var reg15 = 0x18
+	if cfg.display == 1 reg15 = reg15 | 0x80 end
+	if cfg.ionizer == 1 reg15 = reg15 | 0x40 end
+	if cfg.sleep == 1   reg15 = reg15 | 0x02 end
+	if cfg.eco == 1     reg15 = reg15 | 0x01 end
+	#NB: byte 16-21 are the MAC address per the protocol doc ; "beep" here is unconfirmed (writes byte 16)
+	var reg16 = (cfg.beep == 0) ? 0x01 : 0x00 #byte 16 : 0x01 = no beep (UNCONFIRMED), 0x00 = beep
 	if ac_mode != "off"
 		reg12= ac_mode_values.find(ac_mode, 0x00) | 0x08
 	else
