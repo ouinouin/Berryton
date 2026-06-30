@@ -12,41 +12,49 @@ import global
 
 # --- all tunable settings live here, persisted to flash and editable from the config page ---
 class BerrytonConfig
-	var debug, internal_thermostat, hyst, temperature_setpoint_offset
+	var debug
 	var topic_prefix, feedback_topic_prefix
-	#external temperature source (used by the hysteresis thermostat) : MQTT topic and/or HTTP GET polling
-	var external_temp_mqtt_enabled, external_temp_topic
-	var external_temp_http_enabled, external_temp_http_url, external_temp_http_interval
-	var ha_discovery_enabled, ha_full_command_set, ha_device_name, ha_unique_id, ha_current_temperature_topic
+	#per-mode regulation (heat / cool) : how the room is regulated and where the room temperature comes from.
+	#  *_source : "ac"   = the AC regulates on its own sensor (we just apply *_offset to the setpoint we send)
+	#             "mqtt" = the ESP regulates (hysteresis on *_hyst) using the room temp read from *_temp_topic
+	#             "http" = same, room temp polled from *_http_url every *_http_interval seconds
+	var heat_source, heat_offset, heat_hyst, heat_temp_topic, heat_http_url, heat_http_interval
+	var cool_source, cool_offset, cool_hyst, cool_temp_topic, cool_http_url, cool_http_interval
+	var ha_discovery_enabled, ha_full_command_set, ha_device_name, ha_unique_id
+	var ha_current_temp_source                        #temp reported to HA : "ac_sensor" or "regulation"
 	var serial_emulation, beep
 	var display, ionizer, sleep, eco                  #AC config-word flags (emission byte 15)
 	#list of the persisted settings (stored in flash under "cfg_<name>")
-	static keys = ["debug","internal_thermostat","hyst","temperature_setpoint_offset",
-	               "topic_prefix","feedback_topic_prefix",
-	               "external_temp_mqtt_enabled","external_temp_topic",
-	               "external_temp_http_enabled","external_temp_http_url","external_temp_http_interval",
-	               "ha_discovery_enabled","ha_full_command_set","ha_device_name",
-	               "ha_unique_id","ha_current_temperature_topic","serial_emulation","beep",
+	static keys = ["debug","topic_prefix","feedback_topic_prefix",
+	               "heat_source","heat_offset","heat_hyst","heat_temp_topic","heat_http_url","heat_http_interval",
+	               "cool_source","cool_offset","cool_hyst","cool_temp_topic","cool_http_url","cool_http_interval",
+	               "ha_discovery_enabled","ha_full_command_set","ha_device_name","ha_unique_id",
+	               "ha_current_temp_source","serial_emulation","beep",
 	               "display","ionizer","sleep","eco"]
 
 	def init()
 		#defaults used on first boot, before anything has been saved to flash
 		self.debug = 1
-		self.internal_thermostat = 1
-		self.hyst = 0.3
-		self.temperature_setpoint_offset = 8
 		self.topic_prefix = "cmnd/Newclim/"
 		self.feedback_topic_prefix = "tele/Newclim/"
-		self.external_temp_mqtt_enabled = 1                #subscribe to an MQTT topic for the room temperature
-		self.external_temp_topic = "nodered/temp-salon"
-		self.external_temp_http_enabled = 0               #poll an HTTP url for the room temperature
-		self.external_temp_http_url = ""                  #e.g. http://192.168.0.10/temp (body should contain a number)
-		self.external_temp_http_interval = 60             #seconds between HTTP polls
+		#per-mode regulation : clean defaults = let the AC regulate on its own sensor, no offset, no external temp
+		self.heat_source = "ac"                           #"ac" | "mqtt" | "http"
+		self.heat_offset = 0                              #°C added to the setpoint sent to the AC (compensates a high-placed sensor)
+		self.heat_hyst = 0.3                              #hysteresis (°C) when the ESP regulates
+		self.heat_temp_topic = ""                         #MQTT topic carrying the room temperature
+		self.heat_http_url = ""                           #e.g. http://192.168.0.10/temp (body should contain a number)
+		self.heat_http_interval = 60                      #seconds between HTTP polls
+		self.cool_source = "ac"
+		self.cool_offset = 0
+		self.cool_hyst = 0.3
+		self.cool_temp_topic = ""
+		self.cool_http_url = ""
+		self.cool_http_interval = 60
 		self.ha_discovery_enabled = 1
 		self.ha_full_command_set = 0
 		self.ha_device_name = "Airton"
 		self.ha_unique_id = "berryton_newclim"
-		self.ha_current_temperature_topic = self.external_temp_topic
+		self.ha_current_temp_source = "ac_sensor"         #"ac_sensor" = AC's own sensor ; "regulation" = the room temp used for regulation
 		self.serial_emulation = 0                         #1=fake AC feedback frames for bench testing (no real unit)
 		self.beep = 1                                     #1=AC beeps on each command (default), 0=silent (byte 16 = 0x01)
 		#config-word flags (emission byte 15) ; defaults keep the historical 0x98 value
@@ -91,12 +99,39 @@ var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
 
 # --- vocabulary of the regulation variables ---
-# cfg.internal_thermostat        : 1 = the ESP regulates (hysteresis) ; 0 = the AC regulates on its own sensor (offset)
-# temperature_setpoint           : the real setpoint, what the user/HA asks for (and what we report back to HA)
+# regulation is per AC mode (heat / cool), resolved at runtime from ac_mode via the reg_* helpers below.
+# reg_source(ac_mode)            : "ac" = the AC regulates on its own sensor (we apply reg_offset) ;
+#                                  "mqtt"/"http" = the ESP regulates in hysteresis on the external room temp.
+# temperature_setpoint           : the user setpoint, what the user/HA asks for. SINGLE source of truth :
+#                                  it is what we always report back to HA, never offsetted, never 17/31.
 # temperature_setpoint_to_ac_unit: the value actually pushed to the AC in hysteresis mode ; forced to 17 or 31°C
-#                                  to make the unit run flat out or pause (only meaningful when cfg.internal_thermostat == 1)
-# cfg.temperature_setpoint_offset: in offset mode, added to the setpoint so the AC's higher/enclosed sensor still
-#                                  regulates the room correctly ; subtracted again before reporting back to HA
+#                                  to make the unit run flat out or pause (only meaningful when the ESP regulates).
+# reg_offset(ac_mode)            : in "ac" mode, added (heat) / subtracted (cool) to the setpoint we send to the
+#                                  AC so its higher/enclosed sensor still regulates the room correctly. The offset
+#                                  is applied only on the frame sent to the AC : it never leaks back to HA.
+# --- per-mode regulation accessors : resolve the heat_/cool_ config key for the given AC mode ---
+# any mode other than heat/cool (auto/dry/fan_only/off) has no ESP regulation : treated as source "ac".
+var EXT_TEMP_HTTP = "__berryton_http_temp__"        #sentinel "topic" used to feed an HTTP reading into the dispatcher
+def reg_get(mode, suffix, dflt)
+	if mode != "heat" && mode != "cool" return dflt end
+	var v = introspect.get(cfg, mode + "_" + suffix)
+	return v != nil ? v : dflt
+end
+def reg_source(mode)        return reg_get(mode, "source", "ac") end
+def reg_offset(mode)        return reg_get(mode, "offset", 0) end
+def reg_hyst(mode)          return reg_get(mode, "hyst", 0.3) end
+def reg_topic(mode)         return reg_get(mode, "temp_topic", "") end
+def reg_http_url(mode)      return reg_get(mode, "http_url", "") end
+def reg_http_interval(mode) return reg_get(mode, "http_interval", 60) end
+#true when the incoming MQTT topic is a room-temperature topic for one of the (mqtt-source) modes
+def is_ext_topic(topic)
+	if topic == EXT_TEMP_HTTP return true end
+	for m : ["heat", "cool"]
+		if reg_source(m) == "mqtt" && topic == reg_topic(m) return true end
+	end
+	return false
+end
+
 # serial communications (pin 26 TX , PIN 32 RX)
 ser = serial(32, 26, 9600, serial.SERIAL_8N1)
 
@@ -122,13 +157,13 @@ def thermostat(setpoint,actual_temp)
 		delta = 0.0
 	end
 	dprint("function thermostat : setpoint=", setpoint , " delta=", delta," last_thermostat_state=",last_thermostat_state)
-	if (delta > cfg.hyst ) && last_thermostat_state!= 0
+	if (delta > reg_hyst(ac_mode) ) && last_thermostat_state!= 0
 		dprint("function thermostat : delta > hyst")
 		last_thermostat_state = 0
 		dprint("function thermostat : last_thermostat_state=",last_thermostat_state)
 		return 0
 
-	elif (delta < -cfg.hyst ) && last_thermostat_state!= 1
+	elif (delta < -reg_hyst(ac_mode) ) && last_thermostat_state!= 1
 		dprint("function thermostat  : delta < -hyst ")
 		last_thermostat_state = 1
 		dprint("function thermostat : last_thermostat_state=",last_thermostat_state)
@@ -240,34 +275,15 @@ def get_internal_temperature(payload)
 	return temperature
 end
 
-#retrieve the AC setpoint temperature
-def get_temperature_setpoint(payload)
-	#dprint("byte 14 , setpoint temperature: " ,payload.getbits(115,1),payload.getbits(114,1), payload.getbits(113,1), payload.getbits(112,1) ) #debug
-	if cfg.internal_thermostat == 0
-		temperature_setpoint = payload.getbits(112,4) +16
-		store_if_different(temperature_setpoint,"TempSetpoint")
-		dprint("function get_temperature_setpoint : temperature_setpoint retrieved on payload from ACunit : ", temperature_setpoint)
-		# will directly return the setpoint received by mqtt
-		#there is a catch here , this function has to be reworked in order to ensure a good sync while using infrared remote
-	else
-		temperature_setpoint = number(persist.TempSetpoint)
-		dprint("function get_temperature_setpoint : temperature_setpoint retrieved from persistent memory : ", temperature_setpoint)
-	end
-	return temperature_setpoint
-end
-
 def publish_feedback(payload)
 	var my_ac_mode = get_ac_mode(payload)
 	var my_fan_speed = get_fan_speed(payload)
 	var my_oscillation_mode = get_oscillation_mode(payload)
 
-	# sending back the temperature setpoint value minus the offset for the regulation to happen correctly
+	# temperature_setpoint is the user's target (set by temperature/set, persisted as TempSetpoint) ; we report
+	# it verbatim and never derive it from the AC frame here : the frame carries the offsetted / hysteresis value,
+	# not the user target. (Reading the frame back is the infrared-remote sync, deferred to a later phase.)
 	var my_temperature = str(get_internal_temperature(payload) )
-	if cfg.internal_thermostat == 0
-		temperature_setpoint = get_temperature_setpoint(payload) - cfg.temperature_setpoint_offset
-	else
-		temperature_setpoint = get_temperature_setpoint(payload)
-	end
 	#initialize settings value with first feedback from AC unit to manage restart conditions
 	if fan_speed_setpoint == nil fan_speed_setpoint = my_fan_speed  dprint("recovered fan_speed_setpoint : " , fan_speed_setpoint) end
 	if oscillation_mode_setpoint == nil oscillation_mode_setpoint = my_oscillation_mode dprint("recovered oscillation_mode_setpoint : ", oscillation_mode_setpoint) end
@@ -289,7 +305,9 @@ def publish_feedback(payload)
 	#dprint("function publish_feedback : published FanSpeedFeedback")
 	mqtt.publish(cfg.feedback_topic_prefix + "swing/get" , my_oscillation_mode)
 	#dprint("function publish_feedback : published OscillationModeFeedback")
-	mqtt.publish(cfg.feedback_topic_prefix + "Actualtemp/get" , my_temperature)
+	#current temperature reported to HA : the AC's own sensor, or the room temp used for regulation (config choice)
+	var ha_temp = (cfg.ha_current_temp_source == "regulation") ? str(external_temp_value) : my_temperature
+	mqtt.publish(cfg.feedback_topic_prefix + "Actualtemp/get" , ha_temp)
 	#dprint("function publish_feedback : published TemperatureFeedback")
 	mqtt.publish(cfg.feedback_topic_prefix + "Actualsetpoint/get" , str(temperature_setpoint))
 	#dprint("function publish_feedback : published Temperature_setpointFeedback")
@@ -420,46 +438,38 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 		dprint("function mqtt_subscribe_dispatcher : publishing immediately oscillation_mode_setpoint")
 
 	elif topic == (cfg.topic_prefix + "temperature/set")
-		#some offset trials , the feedback is the temperature without the offset
-		dprint("function mqtt_subscribe_dispatcher : received temperature_setpoint = ", number(payload_s))
-
-		if ac_mode == "heat" && cfg.internal_thermostat == 0
-			temperature_setpoint = number(payload_s) + cfg.temperature_setpoint_offset
-			dprint("function mqtt_subscribe_dispatcher : heating mode, applying positive offset of :" , cfg.temperature_setpoint_offset , "°C")
-
-		elif cfg.internal_thermostat == 1
-			temperature_setpoint = number(payload_s)
-			dprint("function mqtt_subscribe_dispatcher : internal_thermostat enabled in : ", ac_mode, " mode : saving the setpoint: ",temperature_setpoint , " to persistance file if different then previously")
-
-
-		elif ac_mode == "cool" && cfg.internal_thermostat == 0
-			temperature_setpoint = number(payload_s) - cfg.temperature_setpoint_offset
-			dprint("function mqtt_subscribe_dispatcher : cooling mode, applying negative offset of :" , cfg.temperature_setpoint_offset , "°C")
-
-
-		end
+		#the user setpoint is stored & reported verbatim. Any per-mode offset is applied later, only on the
+		#frame actually sent to the AC (see the send block below), so HA always sees the user's target.
+		temperature_setpoint = number(payload_s)
+		dprint("function mqtt_subscribe_dispatcher : received user setpoint = ", temperature_setpoint)
 		store_if_different(temperature_setpoint,"TempSetpoint")
-		dprint("function mqtt_subscribe_dispatcher : publishing immediately temperature_setpoint")
-		mqtt.publish(cfg.feedback_topic_prefix + "Actualsetpoint/get" , payload_s)
+		mqtt.publish(cfg.feedback_topic_prefix + "Actualsetpoint/get" , str(temperature_setpoint))
 
-
-		#on external temperature reception, we trigger the thermostat, we dont
-		#stop the unit but give :
-		# a  lower temperature setpoint (17°C) while in heat mode
-		# a higher temperature setpoint (31°c) while in cool mode
-		#to force the AC unit
-		#to pause with louvre open
-	elif topic == cfg.external_temp_topic && cfg.internal_thermostat == 1
-		dprint("function mqtt_subscribe_dispatcher : received a temperature value from external thermometer : ", number(payload_s) )
+		#a room-temperature reading : an MQTT topic of one of the modes, or an HTTP poll fed via the sentinel.
+		#only the CURRENT mode's source feeds the thermostat ; readings for the other mode (we subscribe to both)
+		#are ignored so external_temp_value stays coherent with ac_mode (and no spurious resend is triggered).
+		#in thermostat mode we then force a 17/31°C setpoint to run the unit flat out or pause it with louvre open.
+	elif is_ext_topic(topic)
+		var valid
+		if topic == EXT_TEMP_HTTP
+			valid = (reg_source(ac_mode) == "http")
+		else
+			valid = (reg_source(ac_mode) == "mqtt" && topic == reg_topic(ac_mode))
+		end
+		if !valid return end
+		dprint("function mqtt_subscribe_dispatcher : external room temperature : ", number(payload_s) )
 		external_temp_value = number(payload_s)
 		global.berryton_state["external_temp"] = external_temp_value
+		if cfg.ha_current_temp_source == "regulation"
+			mqtt.publish(cfg.feedback_topic_prefix + "Actualtemp/get" , str(external_temp_value))
+		end
 	end
-	# The hysteresis thermostat only matters when the ESP regulates (internal_thermostat == 1).
-	# In offset mode (== 0) the AC regulates on its own sensor, so we skip all of this : no
-	# useless flash write, and the thermostat never runs for nothing.
-	# thermostat_state stays nil in offset mode (the send block below short-circuits on it).
+	# The hysteresis thermostat only matters when the ESP regulates (reg_source != "ac").
+	# In "ac" mode the AC regulates on its own sensor, so we skip all of this : no useless
+	# flash write, and the thermostat never runs for nothing.
+	# thermostat_state stays nil in "ac" mode (the send block below short-circuits on it).
 	var thermostat_state
-	if cfg.internal_thermostat == 1
+	if reg_source(ac_mode) != "ac"
 		#sanitize external_temp_value input (skip zero sometimes given by zigbee2mqtt and extremes temps)
 		if external_temp_value < 1 || external_temp_value > 45
 			# invalid reading : skip the regulation but keep going, so a user command is still sent
@@ -489,13 +499,18 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 		end
 	end
 
-	# in thermostat mode we send back the external setpoint #
-	if(cfg.internal_thermostat == 1 &&  topic != cfg.external_temp_topic) || (cfg.internal_thermostat == 1 && thermostat_state != nil)
-		dprint("function mqtt_subscribe_dispatcher : forging payload for internal thermostat mode")
+	# decide which setpoint to forge into the frame sent to the AC
+	var esp_regulates = reg_source(ac_mode) != "ac"
+	if esp_regulates && (!is_ext_topic(topic) || thermostat_state != nil)
+		#ESP hysteresis : push the forced 17/31°C value (resend on a command, or when the thermostat just flipped)
+		dprint("function mqtt_subscribe_dispatcher : forging payload for ESP thermostat mode")
 		frame_to_send = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, temperature_setpoint_to_ac_unit)
-	elif(cfg.internal_thermostat == 0)
-		dprint("function mqtt_subscribe_dispatcher : forging payload for AC unit thermostat + offset mode")
-		frame_to_send = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, int(temperature_setpoint))
+	elif !esp_regulates
+		#AC regulates on its own sensor : push the user setpoint corrected by the per-mode offset (heat +, cool -)
+		var off = reg_offset(ac_mode)
+		var sp = (ac_mode == "heat") ? temperature_setpoint + off : ((ac_mode == "cool") ? temperature_setpoint - off : temperature_setpoint)
+		dprint("function mqtt_subscribe_dispatcher : forging payload for AC-sensor mode, offset=", off, "°C → ", sp)
+		frame_to_send = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, int(sp))
 	end
 	if frame_to_send != nil
 		dprint("function mqtt_subscribe_dispatcher : sending frame to AC unit: ", frame_to_send)
@@ -575,7 +590,7 @@ def publish_ha_discovery()
 		"swing_mode_state_topic": cfg.feedback_topic_prefix + "swing/get",
 		"temperature_command_topic": cfg.topic_prefix + "temperature/set",
 		"temperature_state_topic": cfg.feedback_topic_prefix + "Actualsetpoint/get",
-		"current_temperature_topic": cfg.ha_current_temperature_topic,
+		"current_temperature_topic": cfg.feedback_topic_prefix + "Actualtemp/get",
 		"device": {
 			"identifiers": [cfg.ha_unique_id],
 			"name": cfg.ha_device_name,
@@ -609,33 +624,37 @@ def extract_number(s)
 	return size(out) > 0 ? number(out) : nil
 end
 
-#poll an HTTP url for the room temperature, then feed it to the thermostat like an MQTT reading.
-#reschedules itself every cfg.external_temp_http_interval seconds while enabled.
-def poll_http_temp()
-	if cfg.external_temp_http_enabled != 1 return end          #stop rescheduling if disabled
-	if size(cfg.external_temp_http_url) > 0
-		try
-			var w = webclient()
-			w.begin(cfg.external_temp_http_url)
-			var code = w.GET()
-			if code == 200
-				var t = extract_number(w.get_string())
-				if t != nil
-					dprint("function poll_http_temp : got ", t, "°C from ", cfg.external_temp_http_url)
-					#reuse the dispatcher's external-temperature path (sets external_temp_value + runs thermostat)
-					mqtt_subscribe_dispatcher(cfg.external_temp_topic, 0, str(t), nil)
+#build an HTTP room-temperature poller for one mode. It polls reg_http_url(mode) every reg_http_interval(mode)
+#seconds and feeds the reading to the dispatcher (via the HTTP sentinel) ONLY while the AC is in that mode and
+#still configured for HTTP ; otherwise it just keeps rescheduling without touching external_temp_value.
+def make_http_poller(mode)
+	def poller()
+		if reg_source(mode) != "http" return end          #config changed (applies on restart) : stop the chain
+		if ac_mode == mode && size(reg_http_url(mode)) > 0
+			try
+				var w = webclient()
+				w.begin(reg_http_url(mode))
+				var code = w.GET()
+				if code == 200
+					var t = extract_number(w.get_string())
+					if t != nil
+						dprint("poll_http_temp(", mode, ") : got ", t, "°C from ", reg_http_url(mode))
+						#reuse the dispatcher's external-temperature path (sets external_temp_value + runs thermostat)
+						mqtt_subscribe_dispatcher(EXT_TEMP_HTTP, 0, str(t), nil)
+					else
+						dprint("poll_http_temp(", mode, ") : no number found in HTTP body")
+					end
 				else
-					dprint("function poll_http_temp : no number found in HTTP body")
+					dprint("poll_http_temp(", mode, ") : HTTP GET returned code ", code)
 				end
-			else
-				dprint("function poll_http_temp : HTTP GET returned code ", code)
+				w.close()
+			except .. as e, msg
+				dprint("poll_http_temp(", mode, ") : exception ", e, " ", msg)
 			end
-			w.close()
-		except .. as e, m
-			dprint("function poll_http_temp : exception ", e, " ", m)
 		end
+		tasmota.set_timer(reg_http_interval(mode) * 1000, poller, 2)
 	end
-	tasmota.set_timer(cfg.external_temp_http_interval * 1000, poll_http_temp, 2)
+	return poller
 end
 
 ######### main program ########
@@ -646,10 +665,17 @@ mqtt.subscribe(cfg.topic_prefix + "fan/set",mqtt_subscribe_dispatcher)
 mqtt.subscribe(cfg.topic_prefix + "swing/set",mqtt_subscribe_dispatcher)
 mqtt.subscribe(cfg.topic_prefix + "temperature/set",mqtt_subscribe_dispatcher)
 mqtt.subscribe("testsclim/payloadfromclim",mqtt_subscribe_dispatcher)
-#external temperature : subscribe to the MQTT source only when enabled
-if cfg.external_temp_mqtt_enabled == 1
-	mqtt.subscribe(cfg.external_temp_topic,mqtt_subscribe_dispatcher)
-	dprint("external temp : MQTT source enabled on topic ", cfg.external_temp_topic)
+#external temperature : subscribe to the MQTT temp topic of every mode that uses an MQTT source (dedup)
+var ext_subbed = {}
+for m : ["heat", "cool"]
+	if reg_source(m) == "mqtt"
+		var t = reg_topic(m)
+		if size(t) > 0 && !ext_subbed.contains(t)
+			mqtt.subscribe(t, mqtt_subscribe_dispatcher)
+			ext_subbed[t] = true
+			dprint("external temp : MQTT source enabled (", m, ") on topic ", t)
+		end
+	end
 end
 
 #check if any temperature setpoint has been saved to flash
@@ -675,10 +701,12 @@ end
 tasmota.add_rule("Mqtt#Connected", publish_ha_discovery)
 publish_ha_discovery()
 
-#start the HTTP temperature poller if that source is enabled
-if cfg.external_temp_http_enabled == 1
-	dprint("external temp : HTTP source enabled, polling ", cfg.external_temp_http_url, " every ", cfg.external_temp_http_interval, "s")
-	poll_http_temp()
+#start an HTTP temperature poller for each mode configured for HTTP
+for m : ["heat", "cool"]
+	if reg_source(m) == "http" && size(reg_http_url(m)) > 0
+		dprint("external temp : HTTP source enabled (", m, "), polling ", reg_http_url(m), " every ", reg_http_interval(m), "s")
+		make_http_poller(m)()
+	end
 end
 
 def loop_me()
