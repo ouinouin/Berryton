@@ -570,19 +570,44 @@ global.berryton_apply = berryton_apply
 global.berryton_feed_frame = get_frame_type
 
 # avail variable contains the nr of char present in the serial buffer
-def get_from_serial()
-	var avail = ser.available()
-	if avail != 0
-		var msg = ser.read()
-		ser.flush()
-		if msg[0..1] == bytes("7A7A") && avail == msg.get(4,1)
+#persistent receive buffer : serial reads are accumulated here so we never lose or truncate frames.
+var serial_buf = bytes()
 
-		elif msg[0..1] == bytes("7A7A") && avail > msg.get(4,1)
-			var msg2 = msg[msg.get(4,1)..size(msg)-1]
-			msg = msg[0..msg.get(4,1)-1]
+#append a chunk of serial bytes and dispatch EVERY complete frame it contains. Frames are length-prefixed
+#(byte 4) and start with 7A7A ; we resync on the header, keep any trailing partial frame for the next call,
+#and process several frames that arrived back-to-back (e.g. an A4 right after an A3). Returns the count of
+#complete frames dispatched (handy for tests). Exposed as global.berryton_feed_serial.
+def feed_serial_bytes(chunk)
+	if chunk != nil && size(chunk) > 0
+		serial_buf = serial_buf + chunk
+	end
+	var count = 0
+	while size(serial_buf) >= 5                    #need bytes 0..4 to read the header + length
+		if serial_buf[0..1] != bytes("7A7A")
+			serial_buf = serial_buf[1..size(serial_buf)-1]   #not a header : drop one byte and resync
+			continue
 		end
-		get_frame_type(msg)
-	else
+		var flen = serial_buf.get(4,1)             #total frame length from byte 4
+		if flen < 8 || flen > 60
+			serial_buf = serial_buf[1..size(serial_buf)-1]   #implausible length : resync
+			continue
+		end
+		if size(serial_buf) < flen
+			break                                  #frame not fully arrived yet : wait for more bytes
+		end
+		var frame = serial_buf[0..flen-1]
+		serial_buf = (size(serial_buf) > flen) ? serial_buf[flen..size(serial_buf)-1] : bytes()
+		get_frame_type(frame)
+		count += 1
+	end
+	if size(serial_buf) > 256 serial_buf = bytes() end   #safety : never let garbage grow unbounded
+	return count
+end
+global.berryton_feed_serial = feed_serial_bytes
+
+def get_from_serial()
+	if ser.available() != 0
+		feed_serial_bytes(ser.read())
 	end
 end
 
