@@ -1,7 +1,4 @@
-#airton protocol from me and brice (pingus.org)
-#todo : implement quiet mode on the fan mode
-#todo : check boost mode on the fan mode
-# crc snippet from  https://github.com/peepshow-21/ns-flash/blob/master/berry/nxpanel.be
+#airton protocol from me and brice (pingus.org). Design notes, frame layout, TODOs : see NOTES.md
 
 import string
 import mqtt
@@ -120,17 +117,7 @@ var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
 var remote_control_state                                # last IR-remote state seen in a frame A4 : "on"/"off"/"unknown"
 
-# --- vocabulary of the regulation variables ---
-# regulation is per AC mode (heat / cool), resolved at runtime from ac_mode via the reg_* helpers below.
-# reg_source(ac_mode)            : "ac" = the AC regulates on its own sensor (we apply reg_offset) ;
-#                                  "mqtt"/"http" = the ESP regulates in hysteresis on the external room temp.
-# temperature_setpoint           : the user setpoint, what the user/HA asks for. SINGLE source of truth :
-#                                  it is what we always report back to HA, never offsetted, never 17/31.
-# temperature_setpoint_to_ac_unit: the value actually pushed to the AC in hysteresis mode ; forced to 17 or 31°C
-#                                  to make the unit run flat out or pause (only meaningful when the ESP regulates).
-# reg_offset(ac_mode)            : in "ac" mode, added (heat) / subtracted (cool) to the setpoint we send to the
-#                                  AC so its higher/enclosed sensor still regulates the room correctly. The offset
-#                                  is applied only on the frame sent to the AC : it never leaks back to HA.
+# regulation vocabulary & design (per-mode model, user-setpoint invariant, offset) : see NOTES.md
 # --- per-mode regulation accessors : resolve the heat_/cool_ config key for the given AC mode ---
 # any mode other than heat/cool (auto/dry/fan_only/off) has no ESP regulation : treated as source "ac".
 var EXT_TEMP_HTTP = "__berryton_http_temp__"        #sentinel "topic" used to feed an HTTP reading into the dispatcher
@@ -225,10 +212,8 @@ end
 
 #checking messages incoming from AC unit CRCet
 def check_message(payload)
-	#dprint(payload.size()) #debug
 	var msg_cal_crc = mod_crc16(payload[0..payload.size()-3])
 	var msg_crc = payload.get(payload.size()-2,-2) # last -2 param means endianness swap
-	#dprint("calculated message = " , msg_cal_crc , "crc of payload = ", msg_crc) #debug
 	if msg_cal_crc == msg_crc
 		return 1
 	else
@@ -246,7 +231,6 @@ def get_ac_mode(payload) # available modes are : "auto","cool","dry","fan_only",
 	var ac_mode_list = ["auto","cool","dry","fan_only","heat","off",]
 	var ac_mode_string = "auto"
 	var ac_on_off_state = 0
-	#dprint("byte 13 : 0x" ,string.hex(payload[13]), " ac_mode 3 bits value :", payload.getbits(106,1), payload.getbits(105,1), payload.getbits(104,1), " AC unit on/off state :", payload.getbits(107,1) ) #debug
 	ac_on_off_state = payload.getbits(107,1)
 	if ac_on_off_state == 1
 		var mode_idx = payload.getbits(104,3)          #3 bits give 0..7 but the list has only 6 entries
@@ -265,7 +249,6 @@ def get_fan_speed(payload)
 	var turbo_mode_state = 0
 	var fan_mode_string = "auto"
 	var fan_mode_list = ["auto","low","low-medium","medium","medium-high","high","stepless","turbo"]
-	#dprint("byte 13 : 0x" ,string.hex(payload[13]), " FanSpeedMode 3 bits value :", payload.getbits(110,1), payload.getbits(109,1), payload.getbits(108,1), " mode turbo :", payload.getbits(111,1) ) #debug
 	if turbo_mode_state == 0
 		fan_mode_string = fan_mode_list[payload.getbits(108,3)]
 	else
@@ -278,7 +261,6 @@ end
 #retrieve the AC oscillation mode from the AC unit frame
 def get_oscillation_mode(payload)
 	var oscillation_mode_list = ["off", "on" ,"high","medium-high","medium","medium-low","low","sweep 1-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6","sweep 3-5"]
-	#dprint("function get_oscillation_mode : byte 15 : 0x" ,string.hex(payload[15]), " Oscillation mode up/down 4 bits value :",payload.getbits(123,1), payload.getbits(122,1), payload.getbits(121,1), payload.getbits(120,1)) #debug
 	var osc_idx = payload.getbits(120,4)               #4 bits give 0..15 but the list has only 14 entries
 	var oscillation_mode_string = "off"                #default if the value exceeds the list
 	if osc_idx < oscillation_mode_list.size()
@@ -291,7 +273,6 @@ end
 #retrieve the AC internal unit temperature sensor value from the AC unit frame
 def get_internal_temperature(payload)
 	var temperature = 0
-	#dprint("byte 10 , ambient temperature integer part : " , payload.get(10,1) , "byte 11, ambient temperature decimal part: " , payload.get(11,1)   ) #debug
 	temperature = real(payload.get(10,1)) + real(payload.get(11,1)) /10
 	dprint("function get_internal_temperature : internal unit temperature: ", temperature)
 	return temperature
@@ -322,17 +303,12 @@ def publish_feedback(payload)
 
 	dprint("function publish_feedback : got all needed value, publishing in mqtt topics")
 	mqtt.publish(cfg.feedback_topic_prefix + "mode/get" , my_ac_mode)
-	#dprint("function publish_feedback : published FanSpeedFeedback")
 	mqtt.publish(cfg.feedback_topic_prefix + "fan/get" , my_fan_speed)
-	#dprint("function publish_feedback : published FanSpeedFeedback")
 	mqtt.publish(cfg.feedback_topic_prefix + "swing/get" , my_oscillation_mode)
-	#dprint("function publish_feedback : published OscillationModeFeedback")
 	#current temperature reported to HA : the AC's own sensor, or the room temp used for regulation (config choice)
 	var ha_temp = (cfg.ha_current_temp_source == "regulation") ? str(external_temp_value) : my_temperature
 	mqtt.publish(cfg.feedback_topic_prefix + "Actualtemp/get" , ha_temp)
-	#dprint("function publish_feedback : published TemperatureFeedback")
 	mqtt.publish(cfg.feedback_topic_prefix + "Actualsetpoint/get" , str(temperature_setpoint))
-	#dprint("function publish_feedback : published Temperature_setpointFeedback")
 
 end
 
@@ -350,7 +326,6 @@ end
 
 def get_frame_type(payload)
 	if check_message(payload) != 1
-		#dprint("function get_frame_type : CRC seems invalid, incomplete buffer ?")
 		return "BADCRC"
 	end
 	var ftype = string.hex(payload[7])      #frame type byte
@@ -372,7 +347,6 @@ end
 
 def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	var frame = bytes("7A7A21D5180000A100000000" + "00000000" + "000000000000")
-	#dprint("function forge_payload : empty frame= " ,frame)
 	var ac_mode_values = {"auto": 0x00 , "cool" : 0x01 , "dry" : 0x02 , "fan_only" : 0x03 , "heat": 0x04 , "off" : 0x08}
 	var fan_mode_values = {"auto" : 0x00 ,"low" : 0x10 , "low-medium" : 0x20 ,"medium" : 0x30 , "medium-high" : 0x40 , "high" : 0x50 ,"stepless" : 0x60  ,"turbo" : 0x70 }
 	var oscillation_mode_values = {"off" : 0x00 , "on" : 0x01 ,"high" : 0x02 ,"medium-high" : 0x03 ,"medium" : 0x04 ,"medium-low" : 0x05 ,"low" : 0x06 ,"sweep 1-5" : 0x07 ,"sweep 2-5" : 0x08 ,"sweep2-4" : 0x09 ,"sweep1-4" : 0x0A ,"sweep 1-3" : 0x0B ,"sweep 4-6" : 0x0C ,"sweep 3-5": 0X0D}
@@ -413,22 +387,15 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	if reg13 > 15 reg13 = 15 end
 	dprint("function forge_payload : Register 13 ,temperature setpoint :",temperature_sp," -16 : "  , reg13)
 
-	#dprint("function forge_payload : register 12 , AC mode and fanspeed :", string.hex(reg12))
-	#dprint("function forge_payload : register 13 , temperature setpoint :", string.hex(reg13))
-	#dprint("function forge_payload : register 14 , oscillation_mode      :", string.hex(reg14))
-	#dprint("function forge_payload : register 15 , ConfigWord (todo)    :", string.hex(reg15))
 	#setting all the calculated parameters into the frame
 	frame.set(12,reg12)
 	frame.set(13,reg13)
 	frame.set(14,reg14)
 	frame.set(15,reg15)
 	frame.set(16,reg16) #beep control
-	#dprint("function forge_payload : filled frame= " ,frame)
 
 	#appending CRC
-	#dprint("function forge_payload : ", mod_crc16(frame))
 	frame.add(mod_crc16(frame),-2)
-	#dprint("function forge_payload : filled frame with crc = " ,frame)
 	return frame
 end
 
@@ -483,10 +450,8 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 		store_if_different(temperature_setpoint,"TempSetpoint")
 		mqtt.publish(cfg.feedback_topic_prefix + "Actualsetpoint/get" , str(temperature_setpoint))
 
-		#a room-temperature reading : an MQTT topic of one of the modes, or an HTTP poll fed via the sentinel.
-		#only the CURRENT mode's source feeds the thermostat ; readings for the other mode (we subscribe to both)
-		#are ignored so external_temp_value stays coherent with ac_mode (and no spurious resend is triggered).
-		#in thermostat mode we then force a 17/31°C setpoint to run the unit flat out or pause it with louvre open.
+		#room-temperature reading (current mode's MQTT topic, or an HTTP poll via the sentinel) ; off-mode
+		#readings are ignored so external_temp_value stays coherent with ac_mode. See NOTES.md.
 	elif is_ext_topic(topic)
 		var valid
 		if topic == EXT_TEMP_HTTP
@@ -502,10 +467,8 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 			mqtt.publish(cfg.feedback_topic_prefix + "Actualtemp/get" , str(external_temp_value))
 		end
 	end
-	# The hysteresis thermostat only matters when the ESP regulates (reg_source != "ac").
-	# In "ac" mode the AC regulates on its own sensor, so we skip all of this : no useless
-	# flash write, and the thermostat never runs for nothing.
-	# thermostat_state stays nil in "ac" mode (the send block below short-circuits on it).
+	# the hysteresis thermostat only runs when the ESP regulates (reg_source != "ac") ; in "ac" mode we skip
+	# it entirely and thermostat_state stays nil (the send block short-circuits on it). See NOTES.md.
 	var thermostat_state
 	if reg_source(ac_mode) != "ac"
 		#sanitize external_temp_value input (skip zero sometimes given by zigbee2mqtt and extremes temps)
@@ -581,21 +544,13 @@ def get_from_serial()
 		var msg = ser.read()
 		ser.flush()
 		if msg[0..1] == bytes("7A7A") && avail == msg.get(4,1)
-			#dprint("function get_from_serial : buffer filled with :", avail , " bytes")
-			#dprint ("function get_from_serial : message length :", msg.get(4,1))
-			#dprint("function get_from_serial : message from AC unit :", msg.tostring(60))
 
 		elif msg[0..1] == bytes("7A7A") && avail > msg.get(4,1)
-			#dprint ("function get_from_serial : buffer is bigger than frame, cutting frame")
 			var msg2 = msg[msg.get(4,1)..size(msg)-1]
 			msg = msg[0..msg.get(4,1)-1]
-			#dprint("function get_from_serial : message from AC unit :", msg.tostring(60))
-			#dprint("function get_from_serial : remaining msg   :", msg2.tostring(60)) #todo , implement a buffer of frames.
 		end
-		#dprint("function get_from_serial : calling get_frame_type(msg)")
 		get_frame_type(msg)
 	else
-		#	dprint ("function get_from_serial : nothing in the buffer")
 	end
 end
 
@@ -662,9 +617,8 @@ def extract_number(s)
 	return size(out) > 0 ? number(out) : nil
 end
 
-#build an HTTP room-temperature poller for one mode. It polls reg_http_url(mode) every reg_http_interval(mode)
-#seconds and feeds the reading to the dispatcher (via the HTTP sentinel) ONLY while the AC is in that mode and
-#still configured for HTTP ; otherwise it just keeps rescheduling without touching external_temp_value.
+#build an HTTP room-temperature poller for one mode : polls reg_http_url(mode) every reg_http_interval(mode) s
+#and feeds the dispatcher (via the HTTP sentinel) only while the AC is in that mode. See NOTES.md.
 def make_http_poller(mode)
 	def poller()
 		if reg_source(mode) != "http" return end          #config changed (applies on restart) : stop the chain
