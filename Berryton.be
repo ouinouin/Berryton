@@ -31,6 +31,11 @@ class BerrytonConfig
 	               "ha_discovery_enabled","ha_full_command_set","ha_device_name","ha_unique_id",
 	               "ha_current_temp_source","serial_emulation","beep",
 	               "display","ionizer","sleep","eco"]
+	#settings persisted by an older version, now replaced by the per-mode model : removed from flash on boot
+	static obsolete_keys = ["internal_thermostat","temperature_setpoint_offset","hyst",
+	                        "external_temp_mqtt_enabled","external_temp_topic",
+	                        "external_temp_http_enabled","external_temp_http_url","external_temp_http_interval",
+	                        "ha_current_temperature_topic"]
 
 	def init()
 		#defaults used on first boot, before anything has been saved to flash
@@ -63,6 +68,22 @@ class BerrytonConfig
 		self.sleep = 0                                    #1=sleep mode (bit 0x02)
 		self.eco = 0                                      #1=eco mode (bit 0x01)
 		self.load()
+		self.cleanup_obsolete()
+	end
+
+	#drop obsolete cfg_* entries left in flash by an older version (one-off ; only writes when something changed)
+	def cleanup_obsolete()
+		var changed = false
+		for k : self.obsolete_keys
+			var pk = "cfg_" + k
+			if persist.has(pk)
+				persist.remove(pk)
+				changed = true
+			end
+		end
+		if changed
+			persist.save()
+		end
 	end
 
 	#load each setting from flash, keeping the default when nothing has been saved yet
