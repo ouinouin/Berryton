@@ -109,7 +109,7 @@ global.berryton_cfg = BerrytonConfig()
 var cfg = global.berryton_cfg
 
 #latest known values, exposed for the web UI control panel (see berryton_panel.be)
-global.berryton_state = {"internal_temp":nil, "external_temp":nil, "mode":nil, "fan":nil, "swing":nil, "setpoint":nil}
+global.berryton_state = {"internal_temp":nil, "external_temp":nil, "mode":nil, "fan":nil, "swing":nil, "setpoint":nil, "remote":nil}
 
 #runtime state (not user settings ; the tunable settings live in the BerrytonConfig object 'cfg' below)
 var fan_speed_setpoint
@@ -118,6 +118,7 @@ var temperature_setpoint
 var ac_mode
 var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
+var remote_control_state                                # last IR-remote state seen in a frame A4 : "on"/"off"/"unknown"
 
 # --- vocabulary of the regulation variables ---
 # regulation is per AC mode (heat / cool), resolved at runtime from ac_mode via the reg_* helpers below.
@@ -335,32 +336,37 @@ def publish_feedback(payload)
 
 end
 
+#frame A4 (AC->ESP) : the AC reports an IR-remote state change. byte 10 carries the state.
+#0x00 = remote ON, 0x01 = remote OFF, 0xA5 = unknown (see UnleashedAirConditionner, frame A4).
+#read-only for now : we log it, expose it and publish it, to later align with the IR remote.
+def decode_remote_control(payload)
+	var data = payload[10]
+	var s = (data == 0x00) ? "on" : ((data == 0x01) ? "off" : "unknown")
+	remote_control_state = s
+	global.berryton_state["remote"] = s
+	dprint("function decode_remote_control : frame A4 : IR remote = ", s, " (byte10=0x", string.hex(data), ") raw: ", payload.tostring(60))
+	mqtt.publish(cfg.feedback_topic_prefix + "remote/get", s)
+end
+
 def get_frame_type(payload)
-	var frame_type_string = "NONE" #frame A3 = feedback from AC unit to wifi module
-	if check_message(payload) == 1
-		#dprint("function get_frame_type : frame CRC seems valid")
-		if payload.size() == 34
-			#dprint("function get_frame_type : seeking frame type on byte 7 : 0x" ,string.hex(payload[7]) ) #debug
-
-			if string.hex(payload[7]) == "A3"
-				#dprint("function get_frame_type : frame type is A3 : AC unit is giving back useful feedback")
-				dprint("function get_frame_type : valid message from AC unit :", payload.tostring(60))
-				frame_type_string = "ACFeedback"
-				publish_feedback(payload)
-				return frame_type_string
-			else
-				#dprint("function get_frame_type : frame is 34 bytes long but is not A3 type")
-				return "INVALID_FRAME"
-			end
-		else
-			#dprint("function get_frame_type : frame is not 34 bytes legnth")
-		end
-
-	else
+	if check_message(payload) != 1
 		#dprint("function get_frame_type : CRC seems invalid, incomplete buffer ?")
 		return "BADCRC"
 	end
-
+	var ftype = string.hex(payload[7])      #frame type byte
+	if ftype == "A3" && payload.size() == 34
+		#feedback frame : the AC's full state
+		dprint("function get_frame_type : valid message from AC unit :", payload.tostring(60))
+		publish_feedback(payload)
+		return "ACFeedback"
+	elif ftype == "A4"
+		#IR-remote state change
+		decode_remote_control(payload)
+		return "RemoteControl"
+	else
+		dprint("function get_frame_type : unhandled frame type 0x", ftype, " (", payload.size(), " bytes) : ", payload.tostring(60))
+		return "UNHANDLED"
+	end
 end
 
 
