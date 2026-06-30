@@ -72,6 +72,15 @@ Other settings: MQTT command/feedback prefixes, beep, LCD display / ionizer / sl
 name & unique id, HA discovery on/off, full vs simplified command set, the temperature reported to HA
 (A/C sensor vs regulation source), debug logging, and a bench `serial_emulation` toggle.
 
+## Web UI
+
+A live control panel is added to the Tasmota main page (`berryton_panel.be`), and a per-mode
+**Berryton AC** settings page to the *Configuration* menu (`berryton_config.be`):
+
+| Control panel (main page) | Config page |
+|---|---|
+| ![Berryton control panel](ressources/panel.png) | ![Berryton config page](ressources/config.png) |
+
 ## Home Assistant
 
 The climate entity is created automatically via **MQTT auto-discovery** (`ha_discovery_enabled = 1`). Make sure
