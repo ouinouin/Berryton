@@ -30,6 +30,19 @@ HA reçoit **toujours** `temperature_setpoint` (consigne utilisateur). L'offset 
 l'hystérésis ne sortent que vers l'AC, jamais vers HA. La température courante remontée à HA est
 sélectionnable (`ha_current_temp_source` : sonde AC vs source de régulation), publiée sur un topic unique.
 
+### Réconciliation IR / changements externes (A3-diff)
+Quand l'utilisateur agit sur la télécommande IR (ou tout changement non commandé par nous), la clim l'annonce
+dans sa trame **A3** (la trame A4 ne porte que « wifi on/off », inutilisable). On se resynchronise à **chaque
+A3** par comparaison de valeur (pas de compteur/timing, donc insensible à une trame perdue) : on n'adopte que
+sur un **changement trame-à-trame** vers une valeur qu'on **n'a pas commandée** — ce qui filtre l'écho de notre
+propre commande (l'AC rapporte brièvement l'ancienne valeur stable, puis rattrape la valeur envoyée).
+- **Consigne** (uniquement en mode `"ac"`) : `last_sent_to_ac` = la valeur byte-13 qu'on a forgée. Si la consigne
+  de l'A3 change ET ≠ `last_sent_to_ac` → télécommande → `user_setpoint = ac_sp ∓ offset` (inversion de l'offset),
+  publié vers HA + persisté. En mode hystérésis ESP on ne synchronise pas (l'ESP possède la consigne).
+- **Mode / fan / swing** : « ce qu'on a envoyé » = la variable d'état courante (`ac_mode`,
+  `fan_speed_setpoint`, `oscillation_mode_setpoint`) ; même règle de détection de changement, sans offset.
+Implémenté dans `publish_feedback` ; validé sur testberry (écho / retard d'aller-retour / vraie télécommande).
+
 ## Trames série (Airton)
 
 Structure commune : `7A 7A | src | dst | len | hdr2(2) | type | 0A 0A | … | CRC16(2)`.

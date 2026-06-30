@@ -116,6 +116,11 @@ var ac_mode
 var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
 var remote_control_state                                # last IR-remote state seen in a frame A4 : "on"/"off"/"unknown"
+#IR-remote / external-change reconciliation : we adopt the AC's reported state when it CHANGES to a value we did
+#not command (vs our own command's round-trip echo). last_sent_to_ac = byte-13 setpoint we last forged (AC domain) ;
+#for mode/fan/swing the "last sent" is simply the current setpoint var. *_reported_prev = previous A3 value.
+var last_sent_to_ac
+var ac_reported_prev, ac_mode_reported_prev, fan_reported_prev, swing_reported_prev
 
 # regulation vocabulary & design (per-mode model, user-setpoint invariant, offset) : see NOTES.md
 # --- per-mode regulation accessors : resolve the heat_/cool_ config key for the given AC mode ---
@@ -287,6 +292,31 @@ def publish_feedback(payload)
 	# it verbatim and never derive it from the AC frame here : the frame carries the offsetted / hysteresis value,
 	# not the user target. (Reading the frame back is the infrared-remote sync, deferred to a later phase.)
 	var my_temperature = str(get_internal_temperature(payload) )
+
+	# --- reconcile our internal state with the AC's reported state (adopt IR-remote / external changes) ---
+	# react only on a frame-to-frame CHANGE to a value we did not command : this filters our own command's
+	# round-trip echo (the AC briefly still reports the old value, then catches up to what we sent). See NOTES.md.
+	var ac_sp = payload.getbits(112,4) + 16          # the AC's own setpoint (byte 14 low nibble + 16)
+	if ac_mode_reported_prev != nil && my_ac_mode != ac_mode_reported_prev && my_ac_mode != ac_mode
+		dprint("function publish_feedback : remote changed mode -> ", my_ac_mode) ; ac_mode = my_ac_mode
+	end
+	if fan_reported_prev != nil && my_fan_speed != fan_reported_prev && my_fan_speed != fan_speed_setpoint
+		dprint("function publish_feedback : remote changed fan -> ", my_fan_speed) ; fan_speed_setpoint = my_fan_speed
+	end
+	if swing_reported_prev != nil && my_oscillation_mode != swing_reported_prev && my_oscillation_mode != oscillation_mode_setpoint
+		dprint("function publish_feedback : remote changed swing -> ", my_oscillation_mode) ; oscillation_mode_setpoint = my_oscillation_mode
+	end
+	# setpoint : only when the AC regulates on its own sensor ("ac" mode) ; reverse the per-mode offset.
+	if reg_source(my_ac_mode) == "ac" && ac_reported_prev != nil && ac_sp != ac_reported_prev && ac_sp != last_sent_to_ac
+		var off = reg_offset(my_ac_mode)
+		temperature_setpoint = (my_ac_mode == "heat") ? ac_sp - off : ((my_ac_mode == "cool") ? ac_sp + off : ac_sp)
+		last_sent_to_ac = ac_sp
+		store_if_different(temperature_setpoint, "TempSetpoint")
+		dprint("function publish_feedback : remote changed setpoint : AC=", ac_sp, " -> user_setpoint=", temperature_setpoint)
+	end
+	ac_mode_reported_prev = my_ac_mode ; fan_reported_prev = my_fan_speed
+	swing_reported_prev = my_oscillation_mode ; ac_reported_prev = ac_sp
+
 	#initialize settings value with first feedback from AC unit to manage restart conditions
 	if fan_speed_setpoint == nil fan_speed_setpoint = my_fan_speed  dprint("recovered fan_speed_setpoint : " , fan_speed_setpoint) end
 	if oscillation_mode_setpoint == nil oscillation_mode_setpoint = my_oscillation_mode dprint("recovered oscillation_mode_setpoint : ", oscillation_mode_setpoint) end
@@ -505,12 +535,14 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 	if esp_regulates && (!is_ext_topic(topic) || thermostat_state != nil)
 		#ESP hysteresis : push the forced 17/31°C value (resend on a command, or when the thermostat just flipped)
 		dprint("function mqtt_subscribe_dispatcher : forging payload for ESP thermostat mode")
+		last_sent_to_ac = temperature_setpoint_to_ac_unit
 		frame_to_send = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, temperature_setpoint_to_ac_unit)
 	elif !esp_regulates
 		#AC regulates on its own sensor : push the user setpoint corrected by the per-mode offset (heat +, cool -)
 		var off = reg_offset(ac_mode)
 		var sp = (ac_mode == "heat") ? temperature_setpoint + off : ((ac_mode == "cool") ? temperature_setpoint - off : temperature_setpoint)
 		dprint("function mqtt_subscribe_dispatcher : forging payload for AC-sensor mode, offset=", off, "°C → ", sp)
+		last_sent_to_ac = int(sp)
 		frame_to_send = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, int(sp))
 	end
 	if frame_to_send != nil
