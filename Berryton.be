@@ -426,6 +426,17 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	return frame
 end
 
+#periodic Wi-Fi heartbeat (Frame AB, ESP->AC). The AC only uses it to keep the Wi-Fi icon lit on its
+#display ; it expects no answer and there is no other effect. Constant 12-byte frame :
+#7A 7A 21 D5 0C 00 00 AB 0A 0A + CRC16. Reschedules itself every 60 s.
+def send_heartbeat()
+	var frame = bytes("7A7A21D50C0000AB0A0A")
+	frame.add(mod_crc16(frame), -2)        #same CRC idiom as forge_payload (hardware-confirmed)
+	dprint("function send_heartbeat : sending Wi-Fi heartbeat (frame AB) : ", frame)
+	ser.write(frame)
+	tasmota.set_timer(60000, send_heartbeat, 3)
+end
+
 def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 	var frame_to_send
 	dprint("function mqtt_subscribe_dispatcher : message received from mqtt")
@@ -729,6 +740,9 @@ for m : ["heat", "cool"]
 		make_http_poller(m)()
 	end
 end
+
+#start the periodic Wi-Fi heartbeat (keeps the Wi-Fi icon lit on the AC display)
+send_heartbeat()
 
 def loop_me()
 	# wrap in try/except so an unexpected exception never breaks the polling chain :
