@@ -84,8 +84,10 @@ A live control panel is added to the Tasmota main page (`berryton_panel.be`), an
 
 ## Home Assistant
 
-The climate entity is created automatically via **MQTT auto-discovery** (`ha_discovery_enabled = 1`). Make sure
-MQTT discovery is enabled in Home Assistant — nothing to add to `configuration.yaml`.
+Everything on the web UI is also exposed to Home Assistant via **MQTT auto-discovery** (`ha_discovery_enabled = 1`,
+nothing to add to `configuration.yaml`): the **climate** entity, a **switch** per config-word flag
+(ionizer / sleep / eco / display / beep), and a **binary_sensor** for the IR-remote Wi-Fi link — so anything you
+can toggle or see on the panel is also visible/controllable from HA and MQTT.
 
 ## MQTT topics
 
@@ -94,7 +96,9 @@ With the default prefixes `cmnd/Newclim/` and `tele/Newclim/`:
 | Direction | Topic | Payload |
 |-----------|-------|---------|
 | command | `cmnd/Newclim/mode/set` · `fan/set` · `swing/set` · `temperature/set` | the value |
+| command | `cmnd/Newclim/ionizer/set` · `sleep/set` · `eco/set` · `display/set` · `beep/set` | `1` / `0` |
 | feedback | `tele/Newclim/mode/get` · `fan/get` · `swing/get` | current value |
+| feedback | `tele/Newclim/ionizer/get` · `sleep/get` · `eco/get` · `display/get` · `beep/get` | `1` / `0` |
 | feedback | `tele/Newclim/Actualtemp/get` | current temperature shown to HA |
 | feedback | `tele/Newclim/Actualsetpoint/get` | the user setpoint |
 | feedback | `tele/Newclim/remote/get` | IR-remote Wi-Fi state (`on`/`off`) |

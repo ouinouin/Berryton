@@ -11,10 +11,8 @@ import global
 class BerrytonConfig
 	var debug
 	var topic_prefix, feedback_topic_prefix
-	#per-mode regulation (heat / cool) : how the room is regulated and where the room temperature comes from.
-	#  *_source : "ac"   = the AC regulates on its own sensor (we just apply *_offset to the setpoint we send)
-	#             "mqtt" = the ESP regulates (hysteresis on *_hyst) using the room temp read from *_temp_topic
-	#             "http" = same, room temp polled from *_http_url every *_http_interval seconds
+	#per-mode regulation (heat_/cool_) : *_source = "ac" (AC regulates, apply *_offset) | "mqtt"/"http" (ESP
+	#hysteresis on *_hyst using room temp from *_temp_topic / *_http_url every *_http_interval s). See NOTES.md.
 	var heat_source, heat_offset, heat_hyst, heat_temp_topic, heat_http_url, heat_http_interval
 	var cool_source, cool_offset, cool_hyst, cool_temp_topic, cool_http_url, cool_http_interval
 	var ha_discovery_enabled, ha_full_command_set, ha_device_name, ha_unique_id
@@ -116,11 +114,13 @@ var ac_mode
 var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
 var remote_control_state                                # last IR-remote state seen in a frame A4 : "on"/"off"/"unknown"
-#IR-remote / external-change reconciliation : we adopt the AC's reported state when it CHANGES to a value we did
-#not command (vs our own command's round-trip echo). last_sent_to_ac = byte-13 setpoint we last forged (AC domain) ;
-#for mode/fan/swing the "last sent" is simply the current setpoint var. *_reported_prev = previous A3 value.
+#IR-remote / external-change reconciliation state (see NOTES.md) : last_sent_to_ac = byte-13 setpoint we last
+#forged ; *_reported_prev = previous A3 value used for change-detection.
 var last_sent_to_ac
 var ac_reported_prev, ac_mode_reported_prev, fan_reported_prev, swing_reported_prev, config_word_prev
+#config-word / beep flags exposed to HA as switch entities (cfg key = MQTT topic segment) + their HA labels
+var CONFIG_SWITCHES = ["ionizer", "sleep", "eco", "display", "beep"]
+var SWITCH_NAMES = {"ionizer":"Ionizer / health", "sleep":"Sleep", "eco":"Eco", "display":"Display", "beep":"Beep"}
 
 # regulation vocabulary & design (per-mode model, user-setpoint invariant, offset) : see NOTES.md
 # --- per-mode regulation accessors : resolve the heat_/cool_ config key for the given AC mode ---
@@ -288,14 +288,11 @@ def publish_feedback(payload)
 	var my_fan_speed = get_fan_speed(payload)
 	var my_oscillation_mode = get_oscillation_mode(payload)
 
-	# temperature_setpoint is the user's target (set by temperature/set, persisted as TempSetpoint) ; we report
-	# it verbatim and never derive it from the AC frame here : the frame carries the offsetted / hysteresis value,
-	# not the user target. (Reading the frame back is the infrared-remote sync, deferred to a later phase.)
+	# temperature_setpoint = the user's target (set via temperature/set) ; reported verbatim, never derived here.
 	var my_temperature = str(get_internal_temperature(payload) )
 
-	# --- reconcile our internal state with the AC's reported state (adopt IR-remote / external changes) ---
-	# react only on a frame-to-frame CHANGE to a value we did not command : this filters our own command's
-	# round-trip echo (the AC briefly still reports the old value, then catches up to what we sent). See NOTES.md.
+	# reconcile our state with the AC's reported state : adopt only a frame-to-frame CHANGE to a value we did
+	# not command (filters our own command's round-trip echo). See NOTES.md.
 	var ac_sp = payload.getbits(112,4) + 16          # the AC's own setpoint (byte 14 low nibble + 16)
 	if ac_mode_reported_prev != nil && my_ac_mode != ac_mode_reported_prev && my_ac_mode != ac_mode
 		dprint("function publish_feedback : remote changed mode -> ", my_ac_mode) ; ac_mode = my_ac_mode
@@ -318,17 +315,13 @@ def publish_feedback(payload)
 	# so the panel buttons reflect reality and our next command does not revert a remote change.
 	var cw = payload[16]
 	if config_word_prev != nil && cw != config_word_prev
-		var chg = false
 		var d = (cw & 0x80) ? 1 : 0 ; var io = (cw & 0x40) ? 1 : 0
 		var sl = (cw & 0x02) ? 1 : 0 ; var ec = (cw & 0x01) ? 1 : 0
-		if d != cfg.display cfg.display = d chg = true end
-		if io != cfg.ionizer cfg.ionizer = io chg = true end
-		if sl != cfg.sleep cfg.sleep = sl chg = true end
-		if ec != cfg.eco cfg.eco = ec chg = true end
-		if chg
-			cfg.save()
-			dprint("function publish_feedback : remote changed config-word -> display=", d, " ionizer=", io, " sleep=", sl, " eco=", ec)
-		end
+		#adopt IR-remote toggles into cfg + publish the HA switch state (no resend : the AC already has it)
+		if d != cfg.display global.berryton_set_flag("display", d, false) end
+		if io != cfg.ionizer global.berryton_set_flag("ionizer", io, false) end
+		if sl != cfg.sleep global.berryton_set_flag("sleep", sl, false) end
+		if ec != cfg.eco global.berryton_set_flag("eco", ec, false) end
 	end
 	config_word_prev = cw
 	ac_mode_reported_prev = my_ac_mode ; fan_reported_prev = my_fan_speed
@@ -359,9 +352,7 @@ def publish_feedback(payload)
 
 end
 
-#frame A4 (AC->ESP) : the AC reports an IR-remote state change. byte 10 carries the state.
-#0x00 = remote ON, 0x01 = remote OFF, 0xA5 = unknown (see UnleashedAirConditionner, frame A4).
-#read-only for now : we log it, expose it and publish it, to later align with the IR remote.
+#frame A4 (AC->ESP) : IR-remote Wi-Fi state in byte 10 (0x00=on, 0x01=off, 0xA5=unknown). See FRAMES.md.
 def decode_remote_control(payload)
 	var data = payload[10]
 	var s = (data == 0x00) ? "on" : ((data == 0x01) ? "off" : "unknown")
@@ -446,9 +437,7 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	return frame
 end
 
-#periodic Wi-Fi heartbeat (Frame AB, ESP->AC). The AC only uses it to keep the Wi-Fi icon lit on its
-#display ; it expects no answer and there is no other effect. Constant 12-byte frame :
-#7A 7A 21 D5 0C 00 00 AB 0A 0A + CRC16. Reschedules itself every 60 s.
+#periodic Wi-Fi heartbeat (Frame AB, ESP->AC, /60s) : constant 12-byte frame, keeps the Wi-Fi icon lit. See FRAMES.md.
 def send_heartbeat()
 	var frame = bytes("7A7A21D50C0000AB0A0A")
 	frame.add(mod_crc16(frame), -2)        #same CRC idiom as forge_payload (hardware-confirmed)
@@ -459,6 +448,13 @@ end
 
 def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 	var frame_to_send
+	#config-word / beep switch commands (cmnd/<prefix>/<flag>/set) : handled early, independent of AC-ready state
+	for fl : CONFIG_SWITCHES
+		if topic == cfg.topic_prefix + fl + "/set"
+			global.berryton_set_flag(fl, number(payload_s), true)
+			return true
+		end
+	end
 	dprint("function mqtt_subscribe_dispatcher : message received from mqtt")
 	dprint("function mqtt_subscribe_dispatcher : actual ac_mode = ", ac_mode)
 	dprint("function mqtt_subscribe_dispatcher : actual fan_speed_setpoint = ", fan_speed_setpoint)
@@ -590,10 +586,8 @@ global.berryton_feed_frame = get_frame_type
 #persistent receive buffer : serial reads are accumulated here so we never lose or truncate frames.
 var serial_buf = bytes()
 
-#append a chunk of serial bytes and dispatch EVERY complete frame it contains. Frames are length-prefixed
-#(byte 4) and start with 7A7A ; we resync on the header, keep any trailing partial frame for the next call,
-#and process several frames that arrived back-to-back (e.g. an A4 right after an A3). Returns the count of
-#complete frames dispatched (handy for tests). Exposed as global.berryton_feed_serial.
+#append serial bytes and dispatch EVERY complete frame (length-prefixed at byte 4, header 7A7A) : resync on
+#header, keep a trailing partial for next call, handle back-to-back frames. Returns the frame count. See NOTES.md.
 def feed_serial_bytes(chunk)
 	if chunk != nil && size(chunk) > 0
 		serial_buf = serial_buf + chunk
@@ -639,6 +633,7 @@ def publish_ha_discovery()
 		fan_modes = ["auto","low","low-medium","medium","medium-high","high","stepless","turbo"]
 		swing_modes = ["off","on","high","medium-high","medium","medium-low","low","sweep 1-5","sweep 2-5","sweep2-4","sweep1-4","sweep 1-3","sweep 4-6","sweep 3-5"]
 	end
+	var dev = {"identifiers": [cfg.ha_unique_id], "name": cfg.ha_device_name, "manufacturer": "Airton", "model": "TCL clone (Berryton)"}
 	var disco = {
 		"name": cfg.ha_device_name,
 		"unique_id": cfg.ha_unique_id,
@@ -658,16 +653,24 @@ def publish_ha_discovery()
 		"temperature_command_topic": cfg.topic_prefix + "temperature/set",
 		"temperature_state_topic": cfg.feedback_topic_prefix + "Actualsetpoint/get",
 		"current_temperature_topic": cfg.feedback_topic_prefix + "Actualtemp/get",
-		"device": {
-			"identifiers": [cfg.ha_unique_id],
-			"name": cfg.ha_device_name,
-			"manufacturer": "Airton",
-			"model": "TCL clone (Berryton)"
-		}
+		"device": dev
 	}
-	var config_topic = "homeassistant/climate/" + cfg.ha_unique_id + "/config"
-	mqtt.publish(config_topic, json.dump(disco), true)        #retain = true so HA picks it up anytime
-	dprint("function publish_ha_discovery : published HA autodiscovery to ", config_topic)
+	mqtt.publish("homeassistant/climate/" + cfg.ha_unique_id + "/config", json.dump(disco), true)   #retain
+	#switch entities for the config-word / beep flags (command + state topics) + publish their initial state
+	for fl : CONFIG_SWITCHES
+		var sw = {"name": SWITCH_NAMES[fl], "unique_id": cfg.ha_unique_id + "_" + fl,
+		          "command_topic": cfg.topic_prefix + fl + "/set",
+		          "state_topic": cfg.feedback_topic_prefix + fl + "/get",
+		          "payload_on": "1", "payload_off": "0", "device": dev}
+		mqtt.publish("homeassistant/switch/" + cfg.ha_unique_id + "_" + fl + "/config", json.dump(sw), true)
+		mqtt.publish(cfg.feedback_topic_prefix + fl + "/get", str(introspect.get(cfg, fl)))
+	end
+	#binary_sensor : the IR-remote Wi-Fi link state
+	var bs = {"name": "Remote link", "unique_id": cfg.ha_unique_id + "_remote",
+	          "state_topic": cfg.feedback_topic_prefix + "remote/get",
+	          "payload_on": "on", "payload_off": "off", "device_class": "connectivity", "device": dev}
+	mqtt.publish("homeassistant/binary_sensor/" + cfg.ha_unique_id + "_remote/config", json.dump(bs), true)
+	dprint("function publish_ha_discovery : published climate + switches + binary_sensor")
 end
 #expose it so the separate config-page module can republish discovery after a settings change
 global.berryton_publish_discovery = publish_ha_discovery
@@ -738,6 +741,7 @@ def berryton_apply_config()
 	var want = [cfg.topic_prefix + "mode/set", cfg.topic_prefix + "fan/set",
 	            cfg.topic_prefix + "swing/set", cfg.topic_prefix + "temperature/set",
 	            "testsclim/payloadfromclim"]
+	for fl : CONFIG_SWITCHES want.push(cfg.topic_prefix + fl + "/set") end   #ionizer/sleep/eco/display/beep switches
 	for m : ["heat", "cool"]
 		if reg_source(m) == "mqtt" && size(reg_topic(m)) > 0 want.push(reg_topic(m)) end
 	end
@@ -777,6 +781,17 @@ def berryton_resend()
 	dprint("berryton_resend : re-sent current state to apply a config-word change")
 end
 global.berryton_resend = berryton_resend
+
+#set a config-word / beep flag (0/1), persist it, publish its HA state topic, and optionally re-send to the AC.
+#single entry point used by the MQTT command, the panel toggle, and the A3-frame reconciliation.
+def berryton_set_flag(flag, value, do_resend)
+	value = (value != 0) ? 1 : 0
+	introspect.set(cfg, flag, value)
+	cfg.save()
+	mqtt.publish(cfg.feedback_topic_prefix + flag + "/get", str(value))
+	if do_resend berryton_resend() end
+end
+global.berryton_set_flag = berryton_set_flag
 
 ######### main program ########
 

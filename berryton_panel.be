@@ -58,17 +58,12 @@ class BerrytonPanel
 			if webserver.has_arg("bswg")  global.berryton_apply("swing", webserver.arg("bswg")) end
 			if webserver.has_arg("bsp")   global.berryton_apply("temperature", webserver.arg("bsp")) end
 		end
-		#config-word toggles : set the flag, persist, and re-send so the AC applies the new byte-15 word
-		if cfg != nil
-			var chg = false
-			if webserver.has_arg("bion") cfg.ionizer = int(webserver.arg("bion")) chg = true end
-			if webserver.has_arg("bslp") cfg.sleep   = int(webserver.arg("bslp")) chg = true end
-			if webserver.has_arg("beco") cfg.eco     = int(webserver.arg("beco")) chg = true end
-			if webserver.has_arg("bdsp") cfg.display = int(webserver.arg("bdsp")) chg = true end
-			if chg
-				cfg.save()
-				if global.contains("berryton_resend") global.berryton_resend() end
-			end
+		#config-word toggles : route through berryton_set_flag (sets cfg, persists, publishes HA state, re-sends)
+		if global.contains("berryton_set_flag")
+			if webserver.has_arg("bion") global.berryton_set_flag("ionizer", int(webserver.arg("bion")), true) end
+			if webserver.has_arg("bslp") global.berryton_set_flag("sleep",   int(webserver.arg("bslp")), true) end
+			if webserver.has_arg("beco") global.berryton_set_flag("eco",     int(webserver.arg("beco")), true) end
+			if webserver.has_arg("bdsp") global.berryton_set_flag("display", int(webserver.arg("bdsp")), true) end
 		end
 
 		#2. live feedback values
