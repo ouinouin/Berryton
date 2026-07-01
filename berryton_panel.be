@@ -70,6 +70,7 @@ class BerrytonPanel
 		var s = global.berryton_state
 		self.row("AC internal temp °C", s["internal_temp"])
 		self.row("Room (external) temp °C", s["external_temp"])
+		self.row("Timer (min)", s["timer"])
 
 		#3. control widgets
 		self.selector("Mode", "bmode", BPAN_MODES, s["mode"])

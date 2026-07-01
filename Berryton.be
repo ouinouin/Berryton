@@ -129,7 +129,7 @@ global.berryton_cfg = BerrytonConfig()
 var cfg = global.berryton_cfg
 
 #latest known values, exposed for the web UI control panel (see berryton_panel.be)
-global.berryton_state = {"internal_temp":nil, "external_temp":nil, "mode":nil, "fan":nil, "swing":nil, "setpoint":nil, "remote":nil}
+global.berryton_state = {"internal_temp":nil, "external_temp":nil, "mode":nil, "fan":nil, "swing":nil, "setpoint":nil, "remote":nil, "timer":nil}
 
 #runtime state (not user settings ; the tunable settings live in the BerrytonConfig object 'cfg' below)
 var fan_speed_setpoint
@@ -359,17 +359,21 @@ def publish_feedback(payload)
 	if ac_mode == nil ac_mode = my_ac_mode dprint("recovered ac_mode : ", ac_mode) end
 
 
+	var timer_min = payload[19] + payload[20] * 256   #A3 bytes 19-20 = remaining timer, minutes (little-endian, confirmed)
+
 	#update the live state for the web UI panel
 	global.berryton_state["internal_temp"] = my_temperature
 	global.berryton_state["mode"] = my_ac_mode
 	global.berryton_state["fan"] = my_fan_speed
 	global.berryton_state["swing"] = my_oscillation_mode
 	global.berryton_state["setpoint"] = temperature_setpoint
+	global.berryton_state["timer"] = timer_min
 
 	dprint("function publish_feedback : got all needed value, publishing in mqtt topics")
 	mqtt.publish(cfg.feedback_topic_prefix + "mode/get" , my_ac_mode)
 	mqtt.publish(cfg.feedback_topic_prefix + "fan/get" , my_fan_speed)
 	mqtt.publish(cfg.feedback_topic_prefix + "swing/get" , my_oscillation_mode)
+	mqtt.publish(cfg.feedback_topic_prefix + "timer/get" , str(timer_min))
 	#current temperature reported to HA : the AC's own sensor, or the room temp used for regulation (config choice)
 	var ha_temp = (cfg.ha_current_temp_source == "regulation") ? str(external_temp_value) : my_temperature
 	mqtt.publish(cfg.feedback_topic_prefix + "Actualtemp/get" , ha_temp)
@@ -695,7 +699,12 @@ def publish_ha_discovery()
 	          "state_topic": cfg.feedback_topic_prefix + "remote/get",
 	          "payload_on": "on", "payload_off": "off", "device_class": "connectivity", "device": dev}
 	mqtt.publish("homeassistant/binary_sensor/" + cfg.ha_unique_id + "_remote/config", json.dump(bs), true)
-	dprint("function publish_ha_discovery : published climate + switches + binary_sensor")
+	#sensor : remaining timer (minutes)
+	var ts = {"name": "Timer", "unique_id": cfg.ha_unique_id + "_timer",
+	          "state_topic": cfg.feedback_topic_prefix + "timer/get",
+	          "unit_of_measurement": "min", "icon": "mdi:timer", "device": dev}
+	mqtt.publish("homeassistant/sensor/" + cfg.ha_unique_id + "_timer/config", json.dump(ts), true)
+	dprint("function publish_ha_discovery : published climate + switches + binary_sensor + timer")
 end
 #expose it so the separate config-page module can republish discovery after a settings change
 global.berryton_publish_discovery = publish_ha_discovery
