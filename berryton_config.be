@@ -14,7 +14,7 @@ import string
 var BCFG_FIELDS = [
 	["",                       "section", "General",                        ""],
 	["debug",                  "bool",    "Debug logging",                  ""],
-	["beep",                   "bool",    "AC beep on command",             "Off = silent (UNCONFIRMED: writes the MAC-address byte 16)"],
+	["beep",                   "bool",    "AC beep on command",             "Off = silent (byte 16 ; confirmed on a real unit)"],
 	["serial_emulation",       "bool",    "Serial emulation",               "Bench only: fake AC feedback frames when no real unit is connected"],
 	#note: ionizer / sleep / eco / display are day-to-day toggles, exposed on the main-page control panel instead
 
@@ -41,9 +41,8 @@ var BCFG_FIELDS = [
 	["ha_device_name",         "str",     "HA device name",                 ""],
 	["ha_unique_id",           "str",     "HA unique id",                   ""],
 
-	["",                       "section", "MQTT topics",                    ""],
-	["topic_prefix",           "str",     "MQTT command prefix",            ""],
-	["feedback_topic_prefix",  "str",     "MQTT feedback prefix",           ""],
+	["",                       "section", "MQTT",                           ""],
+	["ac_name",                "str",     "AC MQTT name",                   "Topic namespace for the AC : commands on cmnd/<name>/… , feedback on tele/<name>/… . Kept separate from Tasmota's own device topic to avoid command collisions."],
 ]
 
 class BerrytonConfigPage

@@ -68,7 +68,7 @@ For **each mode** (`heat_*` / `cool_*`) you choose a **source of regulation**:
 In hysteresis (`mqtt`/`http`) mode the ESP forces the unit to 17 °C or 31 °C to run flat-out or coast. The
 **offset and the 17/31 values never leak to Home Assistant** — HA always receives the user's real setpoint.
 
-Other settings: MQTT command/feedback prefixes, beep, HA device name & unique id, HA discovery on/off, full
+Other settings: a single **AC MQTT name** (`cmnd/<name>/…` + `tele/<name>/…` are derived from it), beep, HA device name & unique id, HA discovery on/off, full
 vs simplified command set, the temperature reported to HA (A/C sensor vs regulation source), debug logging,
 and a bench `serial_emulation` toggle. Saving applies immediately — no Berry restart needed. The day-to-day
 **ionizer / sleep / eco / display** flags are toggled from the main-page control panel, not here.

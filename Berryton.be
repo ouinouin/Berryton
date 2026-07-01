@@ -10,7 +10,8 @@ import global
 # --- all tunable settings live here, persisted to flash and editable from the config page ---
 class BerrytonConfig
 	var debug
-	var topic_prefix, feedback_topic_prefix
+	var ac_name                                       #single MQTT namespace for the AC (persisted)
+	var topic_prefix, feedback_topic_prefix           #derived from ac_name : "cmnd/<name>/" and "tele/<name>/"
 	#per-mode regulation (heat_/cool_) : *_source = "ac" (AC regulates, apply *_offset) | "mqtt"/"http" (ESP
 	#hysteresis on *_hyst using room temp from *_temp_topic / *_http_url every *_http_interval s). See NOTES.md.
 	var heat_source, heat_offset, heat_hyst, heat_temp_topic, heat_http_url, heat_http_interval
@@ -20,7 +21,7 @@ class BerrytonConfig
 	var serial_emulation, beep
 	var display, ionizer, sleep, eco                  #AC config-word flags (emission byte 15)
 	#list of the persisted settings (stored in flash under "cfg_<name>")
-	static keys = ["debug","topic_prefix","feedback_topic_prefix",
+	static keys = ["debug","ac_name",
 	               "heat_source","heat_offset","heat_hyst","heat_temp_topic","heat_http_url","heat_http_interval",
 	               "cool_source","cool_offset","cool_hyst","cool_temp_topic","cool_http_url","cool_http_interval",
 	               "ha_discovery_enabled","ha_full_command_set","ha_device_name","ha_unique_id",
@@ -30,13 +31,12 @@ class BerrytonConfig
 	static obsolete_keys = ["internal_thermostat","temperature_setpoint_offset","hyst",
 	                        "external_temp_mqtt_enabled","external_temp_topic",
 	                        "external_temp_http_enabled","external_temp_http_url","external_temp_http_interval",
-	                        "ha_current_temperature_topic"]
+	                        "ha_current_temperature_topic","topic_prefix","feedback_topic_prefix"]
 
 	def init()
 		#defaults used on first boot, before anything has been saved to flash
 		self.debug = 1
-		self.topic_prefix = "cmnd/Newclim/"
-		self.feedback_topic_prefix = "tele/Newclim/"
+		self.ac_name = "Newclim"                          #MQTT namespace ; commands on cmnd/<name>/…, feedback on tele/<name>/…
 		#per-mode regulation : clean defaults = let the AC regulate on its own sensor, no offset, no external temp
 		self.heat_source = "ac"                           #"ac" | "mqtt" | "http"
 		self.heat_offset = 0                              #°C added to the setpoint sent to the AC (compensates a high-placed sensor)
@@ -63,7 +63,31 @@ class BerrytonConfig
 		self.sleep = 0                                    #1=sleep mode (bit 0x02)
 		self.eco = 0                                      #1=eco mode (bit 0x01)
 		self.load()
+		self.migrate_ac_name()   #recover ac_name from the old two-prefix config if needed
+		self.derive()            #compute topic_prefix / feedback_topic_prefix from ac_name
 		self.cleanup_obsolete()
+	end
+
+	#derive the cmnd/tele prefixes from the single ac_name (one field to keep in sync instead of two)
+	def derive()
+		self.topic_prefix = "cmnd/" + self.ac_name + "/"
+		self.feedback_topic_prefix = "tele/" + self.ac_name + "/"
+	end
+
+	#one-off migration : if ac_name was never saved but an old cfg_topic_prefix is present, recover the name
+	#from it (e.g. "cmnd/Newclimtest/" -> "Newclimtest") and persist it so it survives the obsolete-key cleanup.
+	def migrate_ac_name()
+		if introspect.get(persist, "cfg_ac_name") != nil return end
+		var op = introspect.get(persist, "cfg_topic_prefix")
+		if op == nil return end
+		var n = str(op)
+		if size(n) >= 5 && n[0..4] == "cmnd/" n = n[5..size(n)-1] end
+		if size(n) > 0 && n[size(n)-1..size(n)-1] == "/" n = n[0..size(n)-2] end
+		if size(n) > 0
+			self.ac_name = n
+			introspect.set(persist, "cfg_ac_name", n)
+			persist.save()
+		end
 	end
 
 	#drop obsolete cfg_* entries left in flash by an older version (one-off ; only writes when something changed)
@@ -93,6 +117,7 @@ class BerrytonConfig
 
 	#persist every setting to flash
 	def save()
+		self.derive()   #keep the derived prefixes in sync after a possible ac_name change
 		for k : self.keys
 			introspect.set(persist, "cfg_" + k, introspect.get(self, k))
 		end
@@ -400,8 +425,8 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	if cfg.ionizer == 1 reg15 = reg15 | 0x40 end
 	if cfg.sleep == 1   reg15 = reg15 | 0x02 end
 	if cfg.eco == 1     reg15 = reg15 | 0x01 end
-	#NB: byte 16-21 are the MAC address per the protocol doc ; "beep" here is unconfirmed (writes byte 16)
-	var reg16 = (cfg.beep == 0) ? 0x01 : 0x00 #byte 16 : 0x01 = no beep (UNCONFIRMED), 0x00 = beep
+	#byte 16 = beep control : CONFIRMED on a real unit (contradicts the "MAC address byte 16-21" reading of the ref doc)
+	var reg16 = (cfg.beep == 0) ? 0x01 : 0x00 #byte 16 : 0x01 = no beep, 0x00 = beep (confirmed)
 	if ac_mode != "off"
 		reg12= ac_mode_values.find(ac_mode, 0x00) | 0x08
 	else
