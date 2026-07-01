@@ -28,7 +28,7 @@ Table vivante — à compléter au fil des captures. Voir aussi `NOTES.md` et la
 | bit | masque | fonction | statut |
 |-----|--------|----------|--------|
 | 6 | `0x40` | **ionizer / health / clean** | ✅ confirmé (ON `0xC8` / OFF `0x88`) |
-| 7 | `0x80` | display (présumé) | à confirmer |
+| 7 | `0x80` | display | ✅ confirmé (A3 byte16 `0x98` = display on, suivi par le panneau) |
 | 4 | `0x10` | aux heater (présumé) | à confirmer |
 | 1 | `0x02` | sleep (présumé) | à confirmer |
 | 0 | `0x01` | eco (présumé) | à confirmer |
