@@ -15,11 +15,8 @@ var BCFG_FIELDS = [
 	["",                       "section", "General",                        ""],
 	["debug",                  "bool",    "Debug logging",                  ""],
 	["beep",                   "bool",    "AC beep on command",             "Off = silent (UNCONFIRMED: writes the MAC-address byte 16)"],
-	["display",                "bool",    "LCD display on",                 "Turn the unit's display off (emission byte 15 bit 7)"],
-	["ionizer",                "bool",    "Ionizer / health",               ""],
-	["sleep",                  "bool",    "Sleep mode",                     ""],
-	["eco",                    "bool",    "Eco mode",                       ""],
 	["serial_emulation",       "bool",    "Serial emulation",               "Bench only: fake AC feedback frames when no real unit is connected"],
+	#note: ionizer / sleep / eco / display are day-to-day toggles, exposed on the main-page control panel instead
 
 	["",                       "section", "Heat mode",                      "How the room is regulated while the AC is heating"],
 	["heat_source",            "radio",   "Source of regulation",           "", [["ac","AC internal sensor"],["mqtt","ESP thermostat — MQTT temp"],["http","ESP thermostat — HTTP temp"]]],
@@ -81,8 +78,10 @@ class BerrytonConfigPage
 			end
 		end
 		cfg.save()
-		#republish autodiscovery so HA picks up renamed entity / changed menus right away
-		if global.contains("berryton_publish_discovery")
+		#apply live : re-subscribe MQTT topics, (re)start HTTP pollers, republish HA discovery — no Berry restart needed
+		if global.contains("berryton_apply_config")
+			global.berryton_apply_config()
+		elif global.contains("berryton_publish_discovery")
 			global.berryton_publish_discovery()
 		end
 	end
@@ -132,16 +131,15 @@ class BerrytonConfigPage
 			webserver.content_stop()
 			return
 		end
-		var saved = false
 		if webserver.has_arg("save")
 			self.save_from_form(cfg)
-			saved = true
+			#POST-redirect-GET : go back to a clean URL so no "saved" banner lingers and a refresh does not re-save.
+			#changes are already applied live by save_from_form, so there is nothing to warn about.
+			webserver.redirect("/berryton")
+			return
 		end
 		webserver.content_start("Berryton AC")
 		webserver.content_send_style()
-		if saved
-			webserver.content_send("<p style='color:green'><b>Settings saved.</b> Topic/source changes apply after a Berry restart.</p>")
-		end
 		#match Tasmota's standard content width (its wrapper is display:inline-block;min-width:340px):
 		#fixing our box to 340px keeps the page the same width as every other config page and makes
 		#the long hint text wrap instead of growing the inline-block wrapper

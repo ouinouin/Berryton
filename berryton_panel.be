@@ -37,9 +37,19 @@ class BerrytonPanel
 		webserver.content_send(h)
 	end
 
+	#a config-word toggle in Tasmota relay-button style (green = on, grey = off) ; clicking flips it via ajax la()
+	def toggle(label, arg, on)
+		var green = (on == 1)
+		webserver.content_send(string.format(
+			"<p style='margin:4px 0'><button onclick='la(\"&%s=%d\")' style='width:100%%;box-sizing:border-box;" +
+			"border:0;border-radius:8px;padding:9px;color:#fff;cursor:pointer;background:%s'>%s : %s</button></p>",
+			arg, green ? 0 : 1, green ? "#0a8f2f" : "#666", label, green ? "ON" : "OFF"))
+	end
+
 	#called on every main-page ajax refresh : first apply any control argument, then render
 	def web_sensor()
 		if global.berryton_state == nil return end
+		var cfg = global.berryton_cfg
 
 		#1. handle widget submissions (la("&xxx=") lands here as a query arg)
 		if global.contains("berryton_apply")
@@ -47,6 +57,18 @@ class BerrytonPanel
 			if webserver.has_arg("bfan")  global.berryton_apply("fan",  webserver.arg("bfan"))  end
 			if webserver.has_arg("bswg")  global.berryton_apply("swing", webserver.arg("bswg")) end
 			if webserver.has_arg("bsp")   global.berryton_apply("temperature", webserver.arg("bsp")) end
+		end
+		#config-word toggles : set the flag, persist, and re-send so the AC applies the new byte-15 word
+		if cfg != nil
+			var chg = false
+			if webserver.has_arg("bion") cfg.ionizer = int(webserver.arg("bion")) chg = true end
+			if webserver.has_arg("bslp") cfg.sleep   = int(webserver.arg("bslp")) chg = true end
+			if webserver.has_arg("beco") cfg.eco     = int(webserver.arg("beco")) chg = true end
+			if webserver.has_arg("bdsp") cfg.display = int(webserver.arg("bdsp")) chg = true end
+			if chg
+				cfg.save()
+				if global.contains("berryton_resend") global.berryton_resend() end
+			end
 		end
 
 		#2. live feedback values
@@ -65,6 +87,14 @@ class BerrytonPanel
 			"onmousedown='clearTimeout(lt)' ontouchstart='clearTimeout(lt)' " +
 			"oninput=\"clearTimeout(lt);eb('bsplab').innerHTML=this.value\" " +
 			"onchange='la(\"&bsp=\"+this.value)' style='width:100%%'>", sp, sp))
+
+		#4. config-word toggles (day-to-day modes, moved here from the config page)
+		if cfg != nil
+			self.toggle("Ionizer / health", "bion", cfg.ionizer)
+			self.toggle("Sleep", "bslp", cfg.sleep)
+			self.toggle("Eco", "beco", cfg.eco)
+			self.toggle("Display", "bdsp", cfg.display)
+		end
 	end
 end
 

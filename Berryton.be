@@ -120,7 +120,7 @@ var remote_control_state                                # last IR-remote state s
 #not command (vs our own command's round-trip echo). last_sent_to_ac = byte-13 setpoint we last forged (AC domain) ;
 #for mode/fan/swing the "last sent" is simply the current setpoint var. *_reported_prev = previous A3 value.
 var last_sent_to_ac
-var ac_reported_prev, ac_mode_reported_prev, fan_reported_prev, swing_reported_prev
+var ac_reported_prev, ac_mode_reported_prev, fan_reported_prev, swing_reported_prev, config_word_prev
 
 # regulation vocabulary & design (per-mode model, user-setpoint invariant, offset) : see NOTES.md
 # --- per-mode regulation accessors : resolve the heat_/cool_ config key for the given AC mode ---
@@ -314,6 +314,23 @@ def publish_feedback(payload)
 		store_if_different(temperature_setpoint, "TempSetpoint")
 		dprint("function publish_feedback : remote changed setpoint : AC=", ac_sp, " -> user_setpoint=", temperature_setpoint)
 	end
+	# config-word flags (byte 16 : display 0x80, ionizer 0x40, sleep 0x02, eco 0x01) : adopt IR-remote toggles into cfg
+	# so the panel buttons reflect reality and our next command does not revert a remote change.
+	var cw = payload[16]
+	if config_word_prev != nil && cw != config_word_prev
+		var chg = false
+		var d = (cw & 0x80) ? 1 : 0 ; var io = (cw & 0x40) ? 1 : 0
+		var sl = (cw & 0x02) ? 1 : 0 ; var ec = (cw & 0x01) ? 1 : 0
+		if d != cfg.display cfg.display = d chg = true end
+		if io != cfg.ionizer cfg.ionizer = io chg = true end
+		if sl != cfg.sleep cfg.sleep = sl chg = true end
+		if ec != cfg.eco cfg.eco = ec chg = true end
+		if chg
+			cfg.save()
+			dprint("function publish_feedback : remote changed config-word -> display=", d, " ionizer=", io, " sleep=", sl, " eco=", ec)
+		end
+	end
+	config_word_prev = cw
 	ac_mode_reported_prev = my_ac_mode ; fan_reported_prev = my_fan_speed
 	swing_reported_prev = my_oscillation_mode ; ac_reported_prev = ac_sp
 
@@ -674,11 +691,15 @@ def extract_number(s)
 	return size(out) > 0 ? number(out) : nil
 end
 
+#topics currently subscribed via the dispatcher (unsubscribed when the config changes) + modes with a live HTTP poller
+var subscribed_topics = []
+var http_poller_running = {}
+
 #build an HTTP room-temperature poller for one mode : polls reg_http_url(mode) every reg_http_interval(mode) s
 #and feeds the dispatcher (via the HTTP sentinel) only while the AC is in that mode. See NOTES.md.
 def make_http_poller(mode)
 	def poller()
-		if reg_source(mode) != "http" return end          #config changed (applies on restart) : stop the chain
+		if reg_source(mode) != "http" http_poller_running[mode] = false return end   #source changed : stop + free the slot
 		if ac_mode == mode && size(reg_http_url(mode)) > 0
 			try
 				var w = webclient()
@@ -706,26 +727,60 @@ def make_http_poller(mode)
 	return poller
 end
 
+#(re)apply the runtime setup that depends on config : MQTT subscriptions + HTTP pollers + HA discovery.
+#called at boot AND by the config page on save, so topic/source changes take effect WITHOUT a Berry restart.
+def berryton_apply_config()
+	#drop our previous subscriptions, then subscribe the command + external-temp topics of the current config
+	for t : subscribed_topics
+		mqtt.unsubscribe(t)
+	end
+	subscribed_topics = []
+	var want = [cfg.topic_prefix + "mode/set", cfg.topic_prefix + "fan/set",
+	            cfg.topic_prefix + "swing/set", cfg.topic_prefix + "temperature/set",
+	            "testsclim/payloadfromclim"]
+	for m : ["heat", "cool"]
+		if reg_source(m) == "mqtt" && size(reg_topic(m)) > 0 want.push(reg_topic(m)) end
+	end
+	var seen = {}
+	for t : want
+		if !seen.contains(t)
+			mqtt.subscribe(t, mqtt_subscribe_dispatcher)
+			subscribed_topics.push(t)
+			seen[t] = true
+		end
+	end
+	#start an HTTP poller for each http mode that doesn't already have one running (pollers self-stop otherwise)
+	for m : ["heat", "cool"]
+		if reg_source(m) == "http" && size(reg_http_url(m)) > 0 && !http_poller_running.find(m, false)
+			http_poller_running[m] = true
+			make_http_poller(m)()
+		end
+	end
+	publish_ha_discovery()
+	dprint("berryton_apply_config : subscriptions + pollers + HA discovery (re)applied")
+end
+global.berryton_apply_config = berryton_apply_config
+
+#re-forge and send the current AC state (used when a config-word flag is toggled from the panel, so the
+#unit applies the new byte-15 config word immediately instead of waiting for the next command)
+def berryton_resend()
+	if ac_mode == nil || fan_speed_setpoint == nil || oscillation_mode_setpoint == nil return end
+	var frame
+	if reg_source(ac_mode) != "ac"
+		frame = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, temperature_setpoint_to_ac_unit)
+	else
+		var off = reg_offset(ac_mode)
+		var sp = (ac_mode == "heat") ? temperature_setpoint + off : ((ac_mode == "cool") ? temperature_setpoint - off : temperature_setpoint)
+		frame = forge_payload(ac_mode, fan_speed_setpoint, oscillation_mode_setpoint, int(sp))
+	end
+	ser.write(frame)
+	dprint("berryton_resend : re-sent current state to apply a config-word change")
+end
+global.berryton_resend = berryton_resend
+
 ######### main program ########
 
 dprint("starting program : mqtt topics", cfg.topic_prefix , cfg.feedback_topic_prefix )
-mqtt.subscribe(cfg.topic_prefix + "mode/set",mqtt_subscribe_dispatcher)
-mqtt.subscribe(cfg.topic_prefix + "fan/set",mqtt_subscribe_dispatcher)
-mqtt.subscribe(cfg.topic_prefix + "swing/set",mqtt_subscribe_dispatcher)
-mqtt.subscribe(cfg.topic_prefix + "temperature/set",mqtt_subscribe_dispatcher)
-mqtt.subscribe("testsclim/payloadfromclim",mqtt_subscribe_dispatcher)
-#external temperature : subscribe to the MQTT temp topic of every mode that uses an MQTT source (dedup)
-var ext_subbed = {}
-for m : ["heat", "cool"]
-	if reg_source(m) == "mqtt"
-		var t = reg_topic(m)
-		if size(t) > 0 && !ext_subbed.contains(t)
-			mqtt.subscribe(t, mqtt_subscribe_dispatcher)
-			ext_subbed[t] = true
-			dprint("external temp : MQTT source enabled (", m, ") on topic ", t)
-		end
-	end
-end
 
 #check if any temperature setpoint has been saved to flash
 if persist.member("TempSetpoint") != nil
@@ -746,17 +801,12 @@ else
 	persist.temperature_setpoint_to_ac_unit = temperature_setpoint_to_ac_unit
 end
 
-#publish HA autodiscovery on every MQTT (re)connection, plus once now in case we are already connected
+#re-publish HA autodiscovery on every MQTT (re)connection
 tasmota.add_rule("Mqtt#Connected", publish_ha_discovery)
-publish_ha_discovery()
 
-#start an HTTP temperature poller for each mode configured for HTTP
-for m : ["heat", "cool"]
-	if reg_source(m) == "http" && size(reg_http_url(m)) > 0
-		dprint("external temp : HTTP source enabled (", m, "), polling ", reg_http_url(m), " every ", reg_http_interval(m), "s")
-		make_http_poller(m)()
-	end
-end
+#subscribe the command + external-temp topics, start the HTTP pollers, publish HA discovery.
+#same function the config page calls on save, so topic/source changes apply without a restart.
+berryton_apply_config()
 
 #start the periodic Wi-Fi heartbeat (keeps the Wi-Fi icon lit on the AC display)
 send_heartbeat()
