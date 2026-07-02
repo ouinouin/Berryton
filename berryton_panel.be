@@ -65,6 +65,10 @@ class BerrytonPanel
 			if webserver.has_arg("beco") global.berryton_set_flag("eco",     int(webserver.arg("beco")), true) end
 			if webserver.has_arg("bdsp") global.berryton_set_flag("display", int(webserver.arg("bdsp")), true) end
 		end
+		#timer slider : sends minutes (hours*60), 0 = cancel
+		if webserver.has_arg("btimer") && global.contains("berryton_set_timer")
+			global.berryton_set_timer(int(webserver.arg("btimer")))
+		end
 
 		#2. live feedback values
 		var s = global.berryton_state
@@ -83,6 +87,15 @@ class BerrytonPanel
 			"onmousedown='clearTimeout(lt)' ontouchstart='clearTimeout(lt)' " +
 			"oninput=\"clearTimeout(lt);eb('bsplab').innerHTML=this.value\" " +
 			"onchange='la(\"&bsp=\"+this.value)' style='width:100%%'>", sp, sp))
+		#timer slider : 0-24 h by 0.5 h steps, live label, sends minutes on change (0 = cancel)
+		var tmin = (s["timer"] == nil) ? 0 : int(s["timer"])
+		webserver.content_send(string.format(
+			"<p><b>Set timer</b> : <span id='btmlab'>%s</span><br>" +
+			"<input type='range' min='0' max='24' step='0.5' value='%g' " +
+			"onmousedown='clearTimeout(lt)' ontouchstart='clearTimeout(lt)' " +
+			"oninput=\"clearTimeout(lt);eb('btmlab').innerHTML=(this.value==0?'off':this.value+' h')\" " +
+			"onchange='la(\"&btimer=\"+Math.round(this.value*60))' style='width:100%%'>",
+			(tmin == 0 ? "off" : string.format("%.1f h", tmin / 60.0)), tmin / 60.0))
 
 		#4. config-word toggles (day-to-day modes, moved here from the config page)
 		if cfg != nil

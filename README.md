@@ -86,8 +86,9 @@ A live control panel is added to the Tasmota main page (`berryton_panel.be`), an
 
 Everything on the web UI is also exposed to Home Assistant via **MQTT auto-discovery** (`ha_discovery_enabled = 1`,
 nothing to add to `configuration.yaml`): the **climate** entity, a **switch** per config-word flag
-(ionizer / sleep / eco / display / beep), a **binary_sensor** for the IR-remote Wi-Fi link, and a **sensor** for
-the remaining timer — so anything you can toggle or see on the panel is also visible/controllable from HA and MQTT.
+(ionizer / sleep / eco / display / beep), a **binary_sensor** for the IR-remote Wi-Fi link, and a **number** for
+the timer (shows the remaining time, settable in minutes) — so anything you can toggle or see on the panel is
+also visible/controllable from HA and MQTT.
 
 ## MQTT topics
 
@@ -97,6 +98,7 @@ With the default prefixes `cmnd/Newclim/` and `tele/Newclim/`:
 |-----------|-------|---------|
 | command | `cmnd/Newclim/mode/set` · `fan/set` · `swing/set` · `temperature/set` | the value |
 | command | `cmnd/Newclim/ionizer/set` · `sleep/set` · `eco/set` · `display/set` · `beep/set` | `1` / `0` |
+| command | `cmnd/Newclim/timer/set` | timer in minutes (`0` = cancel) |
 | feedback | `tele/Newclim/mode/get` · `fan/get` · `swing/get` | current value |
 | feedback | `tele/Newclim/ionizer/get` · `sleep/get` · `eco/get` · `display/get` · `beep/get` | `1` / `0` |
 | feedback | `tele/Newclim/timer/get` | remaining timer (minutes) |

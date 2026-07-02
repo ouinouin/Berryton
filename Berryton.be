@@ -139,6 +139,7 @@ var ac_mode
 var temperature_setpoint_to_ac_unit
 var external_temp_value = 19 							# set to a value in case the temperature update from an external sensor is long.
 var remote_control_state                                # last IR-remote state seen in a frame A4 : "on"/"off"/"unknown"
+var timer_to_ac = 0                                     # timer minutes written into the emission frame (bytes 10-11) : tracks the running timer, or a new value on set
 #IR-remote / external-change reconciliation state (see NOTES.md) : last_sent_to_ac = byte-13 setpoint we last
 #forged ; *_reported_prev = previous A3 value used for change-detection.
 var last_sent_to_ac
@@ -360,6 +361,7 @@ def publish_feedback(payload)
 
 
 	var timer_min = payload[19] + payload[20] * 256   #A3 bytes 19-20 = remaining timer, minutes (little-endian, confirmed)
+	timer_to_ac = timer_min                           #track the running timer so a normal command preserves it (see forge_payload)
 
 	#update the live state for the web UI panel
 	global.berryton_state["internal_temp"] = my_temperature
@@ -455,6 +457,8 @@ def forge_payload(ac_mode,fan_speed,oscillation_mode,temperature_sp)
 	dprint("function forge_payload : Register 13 ,temperature setpoint :",temperature_sp," -16 : "  , reg13)
 
 	#setting all the calculated parameters into the frame
+	frame.set(10, timer_to_ac & 0xFF)        #timer minutes low byte  (bytes 10-11 = timer, little-endian)
+	frame.set(11, (timer_to_ac >> 8) & 0xFF) #timer minutes high byte : preserve the running timer / set a new one
 	frame.set(12,reg12)
 	frame.set(13,reg13)
 	frame.set(14,reg14)
@@ -483,6 +487,10 @@ def mqtt_subscribe_dispatcher(topic, idx, payload_s, payload_b)
 			global.berryton_set_flag(fl, number(payload_s), true)
 			return true
 		end
+	end
+	if topic == cfg.topic_prefix + "timer/set"     #set the AC timer in minutes (0 = cancel)
+		global.berryton_set_timer(number(payload_s))
+		return true
 	end
 	dprint("function mqtt_subscribe_dispatcher : message received from mqtt")
 	dprint("function mqtt_subscribe_dispatcher : actual ac_mode = ", ac_mode)
@@ -699,11 +707,13 @@ def publish_ha_discovery()
 	          "state_topic": cfg.feedback_topic_prefix + "remote/get",
 	          "payload_on": "on", "payload_off": "off", "device_class": "connectivity", "device": dev}
 	mqtt.publish("homeassistant/binary_sensor/" + cfg.ha_unique_id + "_remote/config", json.dump(bs), true)
-	#sensor : remaining timer (minutes)
+	#number : the AC timer in minutes (settable from HA) — remove the previous read-only sensor first
+	mqtt.publish("homeassistant/sensor/" + cfg.ha_unique_id + "_timer/config", "", true)
 	var ts = {"name": "Timer", "unique_id": cfg.ha_unique_id + "_timer",
+	          "command_topic": cfg.topic_prefix + "timer/set",
 	          "state_topic": cfg.feedback_topic_prefix + "timer/get",
-	          "unit_of_measurement": "min", "icon": "mdi:timer", "device": dev}
-	mqtt.publish("homeassistant/sensor/" + cfg.ha_unique_id + "_timer/config", json.dump(ts), true)
+	          "min": 0, "max": 1440, "step": 30, "unit_of_measurement": "min", "icon": "mdi:timer", "device": dev}
+	mqtt.publish("homeassistant/number/" + cfg.ha_unique_id + "_timer/config", json.dump(ts), true)
 	dprint("function publish_ha_discovery : published climate + switches + binary_sensor + timer")
 end
 #expose it so the separate config-page module can republish discovery after a settings change
@@ -776,6 +786,7 @@ def berryton_apply_config()
 	            cfg.topic_prefix + "swing/set", cfg.topic_prefix + "temperature/set",
 	            "testsclim/payloadfromclim"]
 	for fl : CONFIG_SWITCHES want.push(cfg.topic_prefix + fl + "/set") end   #ionizer/sleep/eco/display/beep switches
+	want.push(cfg.topic_prefix + "timer/set")                               #timer set (minutes)
 	for m : ["heat", "cool"]
 		if reg_source(m) == "mqtt" && size(reg_topic(m)) > 0 want.push(reg_topic(m)) end
 	end
@@ -826,6 +837,19 @@ def berryton_set_flag(flag, value, do_resend)
 	if do_resend berryton_resend() end
 end
 global.berryton_set_flag = berryton_set_flag
+
+#set the AC timer, in minutes (0 = cancel) : write it to the emission frame, re-send, and publish the state.
+def berryton_set_timer(minutes)
+	minutes = int(minutes)
+	if minutes < 0 minutes = 0 end
+	if minutes > 1440 minutes = 1440 end
+	timer_to_ac = minutes
+	global.berryton_state["timer"] = minutes
+	mqtt.publish(cfg.feedback_topic_prefix + "timer/get", str(minutes))
+	berryton_resend()
+	dprint("berryton_set_timer : timer set to ", minutes, " min")
+end
+global.berryton_set_timer = berryton_set_timer
 
 ######### main program ########
 

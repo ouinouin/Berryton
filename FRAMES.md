@@ -10,7 +10,7 @@ Table vivante — à compléter au fil des captures. Voir aussi `NOTES.md` et la
 
 | Type | src→dst | Len | Rôle | Champs clés | Exemple | Statut code |
 |------|---------|-----|------|-------------|---------|-------------|
-| `A1` | 21→D5 | 24 | Commande (mode/fan/consigne/swing/config/beep) | **b10-11 timer (min, little-endian — pour SET, à implémenter)** · b12 mode+fan+power · b13 consigne−16 · b14 swing · b15 config word · **b16 beep (CONFIRMÉ : 0x00=bip, 0x01=silencieux — PAS la MAC)** · b17-21 restent à 0 chez nous (l'AC accepte : « MAC » non requise) | `7A7A21D518…+CRC` | `forge_payload` |
+| `A1` | 21→D5 | 24 | Commande (mode/fan/consigne/swing/config/beep) | **b10-11 timer (min, little-endian — set/preserve, IMPLÉMENTÉ)** · b12 mode+fan+power · b13 consigne−16 · b14 swing · b15 config word · **b16 beep (CONFIRMÉ : 0x00=bip, 0x01=silencieux — PAS la MAC)** · b17-21 restent à 0 chez nous (l'AC accepte : « MAC » non requise) | `7A7A21D518…+CRC` | `forge_payload` |
 | `AB` | 21→D5 | 12 | Heartbeat wifi (/60 s, garde l'icône wifi allumée) | trame **constante**, aucune donnée | `7A7A21D50C0000AB0A0AFCF9` | `send_heartbeat` |
 
 **Config word A1 (byte 15)** : bit7 display · bit6 ionizer · bit4 aux heater · bits3-2 display mode · bit1 sleep · bit0 eco.
