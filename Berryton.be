@@ -20,13 +20,15 @@ class BerrytonConfig
 	var ha_current_temp_source                        #temp reported to HA : "ac_sensor" or "regulation"
 	var serial_emulation, beep
 	var display, ionizer, sleep, eco                  #AC config-word flags (emission byte 15)
+	var rx_pin, tx_pin                                #serial GPIO wiring to the AC (per-device : reference ESP32 = 32/26, STAMP-S3 = 15/13)
 	#list of the persisted settings (stored in flash under "cfg_<name>")
 	static keys = ["debug","ac_name",
 	               "heat_source","heat_offset","heat_hyst","heat_temp_topic","heat_http_url","heat_http_interval",
 	               "cool_source","cool_offset","cool_hyst","cool_temp_topic","cool_http_url","cool_http_interval",
 	               "ha_discovery_enabled","ha_full_command_set","ha_device_name","ha_unique_id",
 	               "ha_current_temp_source","serial_emulation","beep",
-	               "display","ionizer","sleep","eco"]
+	               "display","ionizer","sleep","eco",
+	               "rx_pin","tx_pin"]
 	#settings persisted by an older version, now replaced by the per-mode model : removed from flash on boot
 	static obsolete_keys = ["internal_thermostat","temperature_setpoint_offset","hyst",
 	                        "external_temp_mqtt_enabled","external_temp_topic",
@@ -62,6 +64,10 @@ class BerrytonConfig
 		self.ionizer = 0                                  #1=ionizer/health on (bit 0x40)
 		self.sleep = 0                                    #1=sleep mode (bit 0x02)
 		self.eco = 0                                      #1=eco mode (bit 0x01)
+		#serial GPIO wiring to the AC unit ; defaults = the reference ESP32 board (STAMP-S3 uses 15/13). Editable
+		#from the config page, but a change only takes effect after a restart (the port is opened once at boot).
+		self.rx_pin = 32                                  #RX pin : AC TX → ESP RX
+		self.tx_pin = 26                                  #TX pin : ESP TX → AC RX
 		self.load()
 		self.migrate_ac_name()   #recover ac_name from the old two-prefix config if needed
 		self.derive()            #compute topic_prefix / feedback_topic_prefix from ac_name
@@ -172,8 +178,10 @@ def is_ext_topic(topic)
 	return false
 end
 
-# serial communications (pin 26 TX , PIN 32 RX)
-ser = serial(32, 26, 9600, serial.SERIAL_8N1)
+# serial communications : pins come from the config (BerrytonConfig.rx_pin / tx_pin), so the same code fits
+# every board — reference ESP32 = RX 32 / TX 26, STAMP-S3 = RX 15 / TX 13. serial(RX, TX, baud, mode).
+# A pin change needs a restart to re-open the port (see the config-page hint).
+ser = serial(int(cfg.rx_pin), int(cfg.tx_pin), 9600, serial.SERIAL_8N1)
 
 #debug print helper : prints only when debug is enabled, so there is no need for an "if debug" around every call
 def dprint(*args)

@@ -43,6 +43,10 @@ var BCFG_FIELDS = [
 
 	["",                       "section", "MQTT",                           ""],
 	["ac_name",                "str",     "AC MQTT name",                   "Topic namespace for the AC : commands on cmnd/<name>/… , feedback on tele/<name>/… . Kept separate from Tasmota's own device topic to avoid command collisions."],
+
+	["",                       "section", "Hardware (serial to AC)",        "GPIO wiring to the AC unit. A change only takes effect after a restart (the serial port is opened once at boot)."],
+	["rx_pin",                 "num",     "RX pin (AC → ESP)",              "GPIO number. Reference ESP32 board: 32 ; ESP32 STAMP-S3: 15"],
+	["tx_pin",                 "num",     "TX pin (ESP → AC)",              "GPIO number. Reference ESP32 board: 26 ; ESP32 STAMP-S3: 13"],
 ]
 
 class BerrytonConfigPage
