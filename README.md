@@ -28,8 +28,12 @@ Original discussion: https://github.com/arendst/Tasmota/discussions/17328 (proto
 
 ## Hardware
 
-- An ESP32 (developed on an **M5Stack Atom**) wired to the A/C unit's serial bus.
-- Serial pins (configurable in `Berryton.be`): **RX = GPIO32, TX = GPIO26**, 9600 8N1.
+- An ESP32 wired to the A/C unit's serial bus, **9600 8N1**. Developed on an **M5Stack Atom**; also running on
+  an **ESP32-S3** (M5Stamp-S3).
+- **Serial pins are configurable** from the *Berryton AC* config page (*Hardware* section, persisted). Defaults
+  are **RX = GPIO32, TX = GPIO26** (reference ESP32). On an **ESP32-S3 use RX = GPIO15, TX = GPIO13** — there
+  GPIO 26/32 are the internal SPI-flash/PSRAM bus, so wiring the UART to them **hangs the board at boot**. Set
+  15/13 *before* the first boot on an S3 (see the deploy notes).
 - The unit drives the line at **5 V** → a bidirectional level shifter is recommended. (It has also run for over
   a year directly without one — at your own risk; opinions differ on ESP32 5 V tolerance.)
 
@@ -47,8 +51,12 @@ Original discussion: https://github.com/arendst/Tasmota/discussions/17328 (proto
    the core file is large and a fragmented-heap reload can run out of memory.
 4. On first boot, wait ~1-2 minutes for the script to recover the A/C state before the MQTT feedback is correct.
 
-> Keep each `.be` file comfortably under ~30 KB — the on-device Berry compiler is memory-bound. Design notes
-> live in `NOTES.md` and the observed serial frame layout in `FRAMES.md`.
+> **ESP32-S3:** set the serial pins to **15 / 13** *before* the first boot of the new code — either from the
+> config page, or by seeding `cfg_rx_pin` / `cfg_tx_pin` in persist. The default 32/26 are the S3's flash-bus
+> pins and will hang the board (recoverable only over USB).
+
+> What matters at load time is the **free heap, not the file size** — the `Berryton.be` core is ~42 KB and loads
+> fine on a full `Restart`. Design notes live in `NOTES.md` and the observed serial frame layout in `FRAMES.md`.
 
 ## Configuration
 
@@ -68,9 +76,11 @@ For **each mode** (`heat_*` / `cool_*`) you choose a **source of regulation**:
 In hysteresis (`mqtt`/`http`) mode the ESP forces the unit to 17 °C or 31 °C to run flat-out or coast. The
 **offset and the 17/31 values never leak to Home Assistant** — HA always receives the user's real setpoint.
 
-Other settings: a single **AC MQTT name** (`cmnd/<name>/…` + `tele/<name>/…` are derived from it), beep, HA device name & unique id, HA discovery on/off, full
-vs simplified command set, the temperature reported to HA (A/C sensor vs regulation source), debug logging,
-and a bench `serial_emulation` toggle. Saving applies immediately — no Berry restart needed. The day-to-day
+Other settings: a single **AC MQTT name** (`cmnd/<name>/…` + `tele/<name>/…` are derived from it), beep, HA
+device name & unique id, HA discovery on/off, full vs simplified command
+set, the temperature reported to HA (A/C sensor vs regulation source), debug logging, the **serial RX/TX pins**
+(*Hardware* section — a pin change takes effect on the next restart), and a bench `serial_emulation` toggle.
+Saving applies immediately — no Berry restart needed (except serial pins). The day-to-day
 **ionizer / sleep / eco / display** flags are toggled from the main-page control panel, not here.
 
 ## Web UI
